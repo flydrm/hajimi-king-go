@@ -157,8 +157,21 @@ func (hk *HajimiKing) Run() error {
 		}()
 	}
 
-	// 主循环
-	hk.mainLoop()
+	// 设置信号处理
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// 在goroutine中运行主循环
+	go func() {
+		hk.mainLoop()
+	}()
+
+	// 等待信号
+	<-sigChan
+	hk.logger.Info("🛑 接收到终止信号，正在关闭程序...")
+	
+	// 执行清理操作，传递实际的统计信息
+	hk.handleShutdown(hk.totalKeysFound, hk.totalRateLimitedKeys)
 
 	return nil
 }
@@ -511,22 +524,9 @@ func main() {
 	// 创建HajimiKing实例
 	app := NewHajimiKing()
 
-	// 设置全局信号处理
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// 在goroutine中运行主应用
-	go func() {
-		if err := app.Run(); err != nil {
-			app.logger.Errorf("❌ Application error: %v", err)
-			os.Exit(1)
-		}
-	}()
-
-	// 等待信号
-	<-sigChan
-	app.logger.Info("🛑 接收到终止信号，正在关闭程序...")
-	
-	// 执行清理操作，传递实际的统计信息
-	app.handleShutdown(app.totalKeysFound, app.totalRateLimitedKeys)
+	// 运行应用（包含信号处理）
+	if err := app.Run(); err != nil {
+		app.logger.Errorf("❌ Application error: %v", err)
+		os.Exit(1)
+	}
 }
