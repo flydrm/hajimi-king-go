@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -253,6 +254,11 @@ func (s *APIServer) getFilteredKeys(keyType, search, repository string) ([]model
 		
 		filteredKeys = append(filteredKeys, key)
 	}
+	
+	// 按发现时间倒序排序（最新的在前）
+	sort.Slice(filteredKeys, func(i, j int) bool {
+		return filteredKeys[i].FoundAt.After(filteredKeys[j].FoundAt)
+	})
 	
 	return filteredKeys, len(filteredKeys)
 }
