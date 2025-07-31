@@ -132,6 +132,14 @@ func (c *Client) SearchForKeys(query string) (*models.GitHubSearchResult, error)
 				time.Sleep(time.Duration(wait) * time.Second)
 				continue
 			}
+			
+			if resp == nil {
+				failedRequests++
+				logger.GetLogger().Warningf("❌ Nil response received on page %d", page)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			
 			defer resp.Body.Close()
 
 			// 检查rate limit
