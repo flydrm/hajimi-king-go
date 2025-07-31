@@ -312,7 +312,7 @@ func (s *APIServer) parseKeyFile(filePath string) ([]models.KeyInfo, error) {
 	keys := []models.KeyInfo{}
 	lines := strings.Split(string(content), "\n")
 	
-	logger.GetLogger().Infof("📄 Parsing file %s with %d lines", filePath, len(lines))
+	// logger.GetLogger().Infof("📄 Parsing file %s with %d lines", filePath, len(lines))
 	
 	for lineIndex, line := range lines {
 		line = strings.TrimSpace(line)
@@ -337,7 +337,7 @@ func (s *APIServer) parseKeyFile(filePath string) ([]models.KeyInfo, error) {
 		}
 	}
 	
-	logger.GetLogger().Infof("📄 Parsed %d keys from file %s", len(keys), filePath)
+	// logger.GetLogger().Infof("📄 Parsed %d keys from file %s", len(keys), filePath)
 	return keys, nil
 }
 
