@@ -624,10 +624,66 @@
             checkAuth();
         });
 
+        // 从localStorage恢复认证状态
+        function restoreAuthFromStorage() {
+            const storedToken = localStorage.getItem('auth_token');
+            const storedExpiry = localStorage.getItem('auth_token_expiry');
+            
+            if (storedToken && storedExpiry) {
+                const expiryTime = new Date(storedExpiry);
+                if (expiryTime > new Date()) {
+                    authToken = storedToken;
+                    return true;
+                } else {
+                    // 令牌已过期，清除存储
+                    localStorage.removeItem('auth_token');
+                    localStorage.removeItem('auth_token_expiry');
+                }
+            }
+            return false;
+        }
+
+        // 保存认证状态到localStorage
+        function saveAuthToStorage(token, expiresIn) {
+            const expiryTime = new Date();
+            expiryTime.setSeconds(expiryTime.getSeconds() + parseInt(expiresIn));
+            
+            localStorage.setItem('auth_token', token);
+            localStorage.setItem('auth_token_expiry', expiryTime.toISOString());
+        }
+
+        // 清除认证状态
+        function clearAuthFromStorage() {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_token_expiry');
+        }
+
         // 检查认证状态
         async function checkAuth() {
+            // 先尝试从localStorage恢复认证状态
+            if (restoreAuthFromStorage()) {
+                // 验证存储的令牌是否仍然有效
+                try {
+                    const response = await fetchAPI('/api/stats');
+                    if (response.ok) {
+                        showMainApp();
+                        loadStats();
+                        loadKeys();
+                        return;
+                    } else {
+                        // 令牌无效，清除存储
+                        clearAuthFromStorage();
+                        authToken = null;
+                    }
+                } catch (error) {
+                    // 网络错误，可能是令牌无效
+                    clearAuthFromStorage();
+                    authToken = null;
+                }
+            }
+            
+            // 尝试无需认证访问
             try {
-                // 先尝试获取统计信息，如果不需要认证则直接显示主界面
                 const response = await fetch('/api/stats');
                 if (response.ok) {
                     showMainApp();
@@ -676,6 +732,12 @@
 
                 if (result.success) {
                     authToken = result.data.token;
+                    
+                    // 保存到localStorage（除非是无需认证模式）
+                    if (result.data.token !== 'no-auth-required' && result.data.expires_in !== '0') {
+                        saveAuthToStorage(result.data.token, result.data.expires_in);
+                    }
+                    
                     showMainApp();
                     loadStats();
                     loadKeys();
@@ -784,6 +846,7 @@
         // 添加退出登录功能
         function logout() {
             authToken = null;
+            clearAuthFromStorage();
             showLoginForm();
             document.getElementById('authKey').value = '';
         }

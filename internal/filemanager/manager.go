@@ -238,18 +238,39 @@ func (fm *FileManager) NormalizeQuery(query string) string {
 func (fm *FileManager) GetFilesByPrefix(prefix string) ([]string, error) {
 	var files []string
 	
-	// 读取数据目录中的所有文件
-	entries, err := os.ReadDir(fm.config.DataPath)
+	// 处理前缀路径，如果包含子目录
+	var dirPath string
+	var filePrefix string
+	
+	if strings.Contains(prefix, "/") {
+		// 包含子目录，如 "keys/keys_valid_"
+		parts := strings.SplitN(prefix, "/", 2)
+		dirPath = filepath.Join(fm.config.DataPath, parts[0])
+		filePrefix = parts[1]
+	} else {
+		// 不包含子目录，直接在数据目录中查找
+		dirPath = fm.config.DataPath
+		filePrefix = prefix
+	}
+	
+	// 读取目录中的所有文件
+	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read data directory: %v", err)
+		// 如果目录不存在，返回空列表而不是错误
+		if os.IsNotExist(err) {
+			logger.GetLogger().Infof("📁 Directory not found: %s", dirPath)
+			return files, nil
+		}
+		return nil, fmt.Errorf("failed to read directory %s: %v", dirPath, err)
 	}
 	
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
-			files = append(files, filepath.Join(fm.config.DataPath, entry.Name()))
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), filePrefix) {
+			files = append(files, filepath.Join(dirPath, entry.Name()))
 		}
 	}
 	
+	logger.GetLogger().Infof("📁 Found %d files with prefix '%s' in %s", len(files), filePrefix, dirPath)
 	return files, nil
 }
 

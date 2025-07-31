@@ -131,6 +131,70 @@ Ctrl + C
   - `GET /api/keys` - 获取密钥列表
   - `GET /api/stats` - 获取统计信息  
   - `GET /api/health` - 健康检查
+  - `GET /api/debug/files` - 调试文件信息
+
+### 7. 密钥文件设置和调试 🔧
+
+密钥文件存储在 `data/keys/` 目录下，按照以下格式命名：
+
+- **有效密钥文件**: `keys_valid_YYYYMMDD_HHMMSS.txt`
+- **限流密钥文件**: `key_429_YYYYMMDD_HHMMSS.txt`
+
+#### 检查密钥文件
+
+```bash
+# 运行检查脚本
+./check_keys.sh
+
+# 或手动检查
+ls -la data/keys/
+```
+
+#### 密钥文件格式
+
+每个密钥文件包含以下格式的行：
+```
+AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx|user/repo|path/to/file|https://github.com/user/repo/blob/main/path/to/file
+```
+
+格式说明：
+- **第1部分**: API密钥
+- **第2部分**: 仓库名称
+- **第3部分**: 文件路径
+- **第4部分**: 文件URL
+
+#### 调试API
+
+如果密钥无法在Web界面中显示，可以使用调试接口：
+
+```bash
+# 调试文件信息
+curl "http://localhost:8080/api/debug/files" \
+  -H "Authorization: Bearer your_secure_access_key_here"
+```
+
+这将返回：
+- 数据目录路径
+- 密钥文件前缀配置
+- 找到的密钥文件列表
+- 缓存的密钥数量
+- 缓存最后更新时间
+
+#### 常见问题
+
+1. **没有找到密钥文件**
+   - 确保程序已经运行并发现了密钥
+   - 检查 `DATA_PATH` 配置是否正确
+   - 验证密钥文件前缀配置
+
+2. **密钥文件格式错误**
+   - 确保文件使用 `|` 分隔符
+   - 每行包含完整的4个字段
+
+3. **API无法读取密钥**
+   - 检查文件权限
+   - 确保API服务器有读取权限
+   - 使用调试接口检查文件读取状态
 
 #### 🔐 安全认证
 

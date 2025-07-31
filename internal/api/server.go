@@ -2,11 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"hajimi-king-go/internal/config"
 	"hajimi-king-go/internal/filemanager"
 	"hajimi-king-go/internal/logger"
@@ -19,6 +21,7 @@ type APIServer struct {
 	fileManager  *filemanager.FileManager
 	httpServer   *http.Server
 	keysCache    *KeysCache
+	jwtSecret    string
 }
 
 // KeysCache 密钥缓存
@@ -62,10 +65,17 @@ type StatsResponse struct {
 
 // NewAPIServer 创建API服务器
 func NewAPIServer(cfg *config.Config, fm *filemanager.FileManager) *APIServer {
+	// 生成JWT密钥
+	jwtSecret := cfg.APIAuthKey
+	if jwtSecret == "" {
+		jwtSecret = "hajimi-king-default-secret"
+	}
+	
 	return &APIServer{
 		config:      cfg,
 		fileManager: fm,
 		keysCache:   &KeysCache{},
+		jwtSecret:   jwtSecret,
 	}
 }
 
@@ -78,6 +88,7 @@ func (s *APIServer) Start() error {
 	mux.HandleFunc("/api/keys", s.authMiddleware(s.corsMiddleware(s.handleGetKeys)))
 	mux.HandleFunc("/api/stats", s.authMiddleware(s.corsMiddleware(s.handleGetStats)))
 	mux.HandleFunc("/api/health", s.authMiddleware(s.corsMiddleware(s.handleHealthCheck)))
+	mux.HandleFunc("/api/debug/files", s.authMiddleware(s.corsMiddleware(s.handleDebugFiles)))
 	mux.HandleFunc("/", s.serveStaticFiles)
 	
 	// 创建HTTP服务器
@@ -301,25 +312,32 @@ func (s *APIServer) parseKeyFile(filePath string) ([]models.KeyInfo, error) {
 	keys := []models.KeyInfo{}
 	lines := strings.Split(string(content), "\n")
 	
-	for _, line := range lines {
+	logger.GetLogger().Infof("📄 Parsing file %s with %d lines", filePath, len(lines))
+	
+	for lineIndex, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		
+		// 尝试用 | 分割
 		parts := strings.Split(line, "|")
 		if len(parts) >= 4 {
 			key := models.KeyInfo{
-				Key:        parts[0],
-				Repository: parts[1],
-				FilePath:   parts[2],
-				FileURL:    parts[3],
+				Key:        strings.TrimSpace(parts[0]),
+				Repository: strings.TrimSpace(parts[1]),
+				FilePath:   strings.TrimSpace(parts[2]),
+				FileURL:    strings.TrimSpace(parts[3]),
 				FoundAt:    time.Now(), // 使用当前时间，因为文件名中包含时间戳
 			}
 			keys = append(keys, key)
+		} else {
+			// 如果分割失败，尝试其他格式
+			logger.GetLogger().Warningf("⚠️ Invalid format in %s line %d: %s", filePath, lineIndex+1, line)
 		}
 	}
 	
+	logger.GetLogger().Infof("📄 Parsed %d keys from file %s", len(keys), filePath)
 	return keys, nil
 }
 
@@ -377,6 +395,7 @@ func (s *APIServer) handleAuth(w http.ResponseWriter, r *http.Request) {
 			Message: "Authentication disabled",
 			Data: map[string]string{
 				"token": "no-auth-required",
+				"expires_in": "0",
 			},
 		}
 		json.NewEncoder(w).Encode(response)
@@ -395,11 +414,25 @@ func (s *APIServer) handleAuth(w http.ResponseWriter, r *http.Request) {
 	
 	// 验证认证密钥
 	if authRequest.AuthKey == s.config.APIAuthKey {
+		// 生成JWT令牌，有效期24小时
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"sub": "user",
+			"iat": time.Now().Unix(),
+			"exp": time.Now().Add(24 * time.Hour).Unix(),
+		})
+		
+		tokenString, err := token.SignedString([]byte(s.jwtSecret))
+		if err != nil {
+			s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to generate token")
+			return
+		}
+		
 		response := APIResponse{
 			Success: true,
 			Message: "Authentication successful",
 			Data: map[string]string{
-				"token": s.config.APIAuthKey,
+				"token": tokenString,
+				"expires_in": "86400",
 			},
 		}
 		json.NewEncoder(w).Encode(response)
@@ -434,13 +467,69 @@ func (s *APIServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		
 		// 验证token
-		if token != s.config.APIAuthKey {
-			s.writeErrorResponse(w, http.StatusUnauthorized, "Invalid token")
+		if token == "no-auth-required" {
+			next(w, r)
+			return
+		}
+		
+		// 验证JWT令牌
+		parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(s.jwtSecret), nil
+		})
+		
+		if err != nil || !parsedToken.Valid {
+			s.writeErrorResponse(w, http.StatusUnauthorized, "Invalid or expired token")
 			return
 		}
 		
 		next(w, r)
 	}
+}
+
+// handleDebugFiles 处理调试文件信息
+func (s *APIServer) handleDebugFiles(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	// 获取有效密钥文件
+	validFiles, err := s.fileManager.GetFilesByPrefix(s.config.ValidKeyPrefix)
+	if err != nil {
+		s.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get valid key files: %v", err))
+		return
+	}
+	
+	// 获取限流密钥文件
+	rateLimitedFiles, err := s.fileManager.GetFilesByPrefix(s.config.RateLimitedKeyPrefix)
+	if err != nil {
+		s.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get rate limited key files: %v", err))
+		return
+	}
+	
+	// 手动更新缓存
+	s.updateCache()
+	
+	debugInfo := map[string]interface{}{
+		"data_path":                s.config.DataPath,
+		"valid_key_prefix":         s.config.ValidKeyPrefix,
+		"rate_limited_key_prefix":  s.config.RateLimitedKeyPrefix,
+		"valid_files":             validFiles,
+		"rate_limited_files":       rateLimitedFiles,
+		"valid_files_count":       len(validFiles),
+		"rate_limited_files_count": len(rateLimitedFiles),
+		"cached_valid_keys":       len(s.keysCache.ValidKeys),
+		"cached_rate_limited_keys": len(s.keysCache.RateLimitedKeys),
+		"cache_last_updated":      s.keysCache.LastUpdated.Format(time.RFC3339),
+	}
+	
+	response := APIResponse{
+		Success: true,
+		Message: "Debug information retrieved successfully",
+		Data:    debugInfo,
+	}
+	
+	json.NewEncoder(w).Encode(response)
 }
 
 // writeErrorResponse 写入错误响应
