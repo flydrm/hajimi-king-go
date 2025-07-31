@@ -219,6 +219,34 @@
             background: #5a6268;
         }
 
+        .btn-success {
+            background: #28a745;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .copy-feedback {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #28a745;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 5px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: all 0.3s ease;
+        }
+
+        .copy-feedback.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
         .keys-container {
             background: white;
             border-radius: 10px;
@@ -230,9 +258,6 @@
             background: #f8f9fa;
             padding: 1rem 1.5rem;
             border-bottom: 1px solid #dee2e6;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
 
         .keys-header h3 {
@@ -354,9 +379,19 @@
                 grid-template-columns: 1fr;
             }
             
-            .keys-header {
+            .keys-header .header-content {
                 flex-direction: column;
                 gap: 1rem;
+            }
+            
+            .keys-header .copy-button-container {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .keys-header .pagination {
+                width: 100%;
+                justify-content: center;
             }
             
             .keys-table {
@@ -449,17 +484,30 @@
 
         <div class="keys-container">
             <div class="keys-header">
-                <h3>📋 密钥列表</h3>
-                <div class="pagination">
-                    <button id="prevBtn" onclick="previousPage()">上一页</button>
-                    <span id="pageInfo">第 1 页，共 1 页</span>
-                    <button id="nextBtn" onclick="nextPage()">下一页</button>
+                <div class="header-content" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <h3>📋 密钥列表</h3>
+                    <div class="copy-button-container" style="display: flex; gap: 1rem; align-items: center;">
+                        <button class="btn btn-success" onclick="copyCurrentPageKeys()" id="copyBtn">
+                            📋 复制当前页密钥
+                        </button>
+                        <div class="pagination">
+                            <button id="prevBtn" onclick="previousPage()">上一页</button>
+                            <span id="pageInfo">第 1 页，共 1 页</span>
+                            <button id="nextBtn" onclick="nextPage()">下一页</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div id="keysContent">
                 <div class="loading">正在加载密钥数据...</div>
             </div>
         </div>
+    </div>
+
+    <!-- 复制成功提示 -->
+    <div id="copyFeedback" class="copy-feedback">
+        <div>✅ 密钥已复制到剪贴板</div>
+        <div style="font-size: 0.9rem; margin-top: 0.25rem;" id="copyCount"></div>
     </div>
 
     <script>
@@ -469,6 +517,12 @@
 
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', function() {
+            // 初始化复制按钮状态
+            const copyBtn = document.getElementById('copyBtn');
+            copyBtn.disabled = true;
+            copyBtn.textContent = '📋 复制当前页密钥';
+            copyBtn.style.opacity = '0.6';
+            
             loadStats();
             loadKeys();
         });
@@ -522,71 +576,7 @@
             }
         }
 
-        // 显示密钥列表
-        function displayKeys(data) {
-            const keysContent = document.getElementById('keysContent');
-            
-            if (data.keys.length === 0) {
-                keysContent.innerHTML = '<div class="no-keys">没有找到符合条件的密钥</div>';
-                return;
-            }
-            
-            currentPage = data.page;
-            totalPages = data.total_pages;
-            totalKeys = data.total;
-            
-            // 更新分页信息
-            document.getElementById('pageInfo').textContent = `第 ${currentPage} 页，共 ${totalPages} 页`;
-            document.getElementById('prevBtn').disabled = currentPage <= 1;
-            document.getElementById('nextBtn').disabled = currentPage >= totalPages;
-            
-            // 生成表格
-            let tableHTML = `
-                <table class="keys-table">
-                    <thead>
-                        <tr>
-                            <th>密钥</th>
-                            <th>类型</th>
-                            <th>仓库</th>
-                            <th>文件路径</th>
-                            <th>发现时间</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-            
-            data.keys.forEach(key => {
-                const keyClass = key.rate_limited ? 'key-rate-limited' : 'key-valid';
-                const keyType = key.rate_limited ? '限流' : '有效';
-                const foundTime = new Date(key.found_at).toLocaleString('zh-CN');
-                
-                tableHTML += `
-                    <tr>
-                        <td>
-                            <div class="key-value">${key.key}</div>
-                        </td>
-                        <td>
-                            <span class="${keyClass}">${keyType}</span>
-                        </td>
-                        <td>
-                            <a href="${key.file_url}" target="_blank" class="repository-link">
-                                ${key.repository}
-                            </a>
-                        </td>
-                        <td>${key.file_path}</td>
-                        <td>${foundTime}</td>
-                    </tr>
-                `;
-            });
-            
-            tableHTML += `
-                    </tbody>
-                </table>
-            `;
-            
-            keysContent.innerHTML = tableHTML;
-        }
-
+  
         // 上一页
         function previousPage() {
             if (currentPage > 1) {
@@ -849,6 +839,158 @@
             clearAuthFromStorage();
             showLoginForm();
             document.getElementById('authKey').value = '';
+        }
+
+        // 当前页面密钥数据
+        let currentKeysData = [];
+
+        // 复制当前页面密钥
+        async function copyCurrentPageKeys() {
+            if (!currentKeysData || currentKeysData.length === 0) {
+                showCopyFeedback('当前页面没有密钥可复制', 0);
+                return;
+            }
+
+            // 提取所有密钥，每行一个
+            const keysText = currentKeysData.map(key => key.key).join('\n');
+            
+            try {
+                // 使用现代的 Clipboard API
+                await navigator.clipboard.writeText(keysText);
+                showCopyFeedback('密钥已复制到剪贴板', currentKeysData.length);
+            } catch (err) {
+                // 如果 Clipboard API 不可用，使用传统方法
+                copyToClipboardFallback(keysText);
+            }
+        }
+
+        // 传统复制方法（兼容性更好）
+        function copyToClipboardFallback(text) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                document.execCommand('copy');
+                showCopyFeedback('密钥已复制到剪贴板', currentKeysData.length);
+            } catch (err) {
+                showCopyFeedback('复制失败，请手动复制', 0, true);
+            }
+
+            document.body.removeChild(textArea);
+        }
+
+        // 显示复制反馈
+        function showCopyFeedback(message, count, isError = false) {
+            const feedback = document.getElementById('copyFeedback');
+            const copyCount = document.getElementById('copyCount');
+            
+            feedback.querySelector('div:first-child').textContent = isError ? '❌ ' + message : '✅ ' + message;
+            
+            if (count > 0) {
+                copyCount.textContent = `共复制 ${count} 个密钥`;
+                copyCount.style.display = 'block';
+            } else {
+                copyCount.style.display = 'none';
+            }
+
+            if (isError) {
+                feedback.style.background = '#dc3545';
+            } else {
+                feedback.style.background = '#28a745';
+            }
+
+            feedback.classList.add('show');
+
+            // 3秒后自动隐藏
+            setTimeout(() => {
+                feedback.classList.remove('show');
+            }, 3000);
+        }
+
+        // 修改 displayKeys 函数，保存当前页面数据
+        function displayKeys(data) {
+            const keysContent = document.getElementById('keysContent');
+            
+            // 保存当前页面数据供复制功能使用
+            currentKeysData = data.keys;
+            
+            // 更新复制按钮状态
+            const copyBtn = document.getElementById('copyBtn');
+            if (data.keys.length === 0) {
+                copyBtn.disabled = true;
+                copyBtn.textContent = '📋 暂无密钥可复制';
+                copyBtn.style.opacity = '0.6';
+            } else {
+                copyBtn.disabled = false;
+                copyBtn.textContent = `📋 复制当前页密钥 (${data.keys.length}个)`;
+                copyBtn.style.opacity = '1';
+            }
+            
+            if (data.keys.length === 0) {
+                keysContent.innerHTML = '<div class="no-keys">没有找到符合条件的密钥</div>';
+                return;
+            }
+            
+            currentPage = data.page;
+            totalPages = data.total_pages;
+            totalKeys = data.total;
+            
+            // 更新分页信息
+            document.getElementById('pageInfo').textContent = `第 ${currentPage} 页，共 ${totalPages} 页`;
+            document.getElementById('prevBtn').disabled = currentPage <= 1;
+            document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+            
+            // 生成表格
+            let tableHTML = `
+                <table class="keys-table">
+                    <thead>
+                        <tr>
+                            <th>密钥</th>
+                            <th>类型</th>
+                            <th>仓库</th>
+                            <th>文件路径</th>
+                            <th>发现时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.keys.forEach(key => {
+                const keyClass = key.rate_limited ? 'key-rate-limited' : 'key-valid';
+                const keyType = key.rate_limited ? '限流' : '有效';
+                const foundTime = new Date(key.found_at).toLocaleString('zh-CN');
+                
+                tableHTML += `
+                    <tr>
+                        <td>
+                            <div class="key-value">${key.key}</div>
+                        </td>
+                        <td>
+                            <span class="${keyClass}">${keyType}</span>
+                        </td>
+                        <td>
+                            <a href="${key.file_url}" target="_blank" class="repository-link">
+                                ${key.repository}
+                            </a>
+                        </td>
+                        <td>${key.file_path}</td>
+                        <td>${foundTime}</td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+            
+            keysContent.innerHTML = tableHTML;
         }
     </script>
 </body>
