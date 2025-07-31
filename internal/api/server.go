@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -302,6 +305,39 @@ func (s *APIServer) loadKeysFromFile(prefix string) []models.KeyInfo {
 	return keys
 }
 
+// extractTimeFromFilename 从文件名中提取时间戳
+func (s *APIServer) extractTimeFromFilename(filePath string) time.Time {
+	// 获取文件名
+	filename := filepath.Base(filePath)
+	
+	// 定义正则表达式匹配时间戳模式
+	// 匹配格式：keys_valid_YYYYMMDD_HHMMSS.txt 或 key_429_YYYYMMDD_HHMMSS.txt
+	re := regexp.MustCompile(`_(\d{8})_(\d{6})\.txt$`)
+	matches := re.FindStringSubmatch(filename)
+	
+	if len(matches) == 3 {
+		dateStr := matches[1]
+		timeStr := matches[2]
+		
+		// 解析时间：YYYYMMDD_HHMMSS
+		layout := "20060102 150405"
+		timeStrFull := dateStr + " " + timeStr
+		
+		parsedTime, err := time.Parse(layout, timeStrFull)
+		if err == nil {
+			return parsedTime
+		}
+	}
+	
+	// 如果无法解析时间，返回文件的修改时间
+	if fileInfo, err := os.Stat(filePath); err == nil {
+		return fileInfo.ModTime()
+	}
+	
+	// 如果都无法获取，返回当前时间
+	return time.Now()
+}
+
 // parseKeyFile 解析密钥文件
 func (s *APIServer) parseKeyFile(filePath string) ([]models.KeyInfo, error) {
 	content, err := s.fileManager.ReadFileContent(filePath)
@@ -328,7 +364,7 @@ func (s *APIServer) parseKeyFile(filePath string) ([]models.KeyInfo, error) {
 				Repository: strings.TrimSpace(parts[1]),
 				FilePath:   strings.TrimSpace(parts[2]),
 				FileURL:    strings.TrimSpace(parts[3]),
-				FoundAt:    time.Now(), // 使用当前时间，因为文件名中包含时间戳
+				FoundAt:    s.extractTimeFromFilename(filePath), // 从文件名中提取准确的时间戳
 			}
 			keys = append(keys, key)
 		} else {
