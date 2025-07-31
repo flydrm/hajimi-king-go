@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hajimi King - 密钥管理面板</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .stat-card h3 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            color: #667eea;
+        }
+
+        .stat-card p {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .controls {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .controls h3 {
+            margin-bottom: 1rem;
+            color: #333;
+        }
+
+        .control-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #555;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+        }
+
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #5a6fd8;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .keys-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .keys-header {
+            background: #f8f9fa;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .keys-header h3 {
+            margin: 0;
+            color: #333;
+        }
+
+        .pagination {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .pagination button {
+            padding: 0.5rem 1rem;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination span {
+            margin: 0 1rem;
+            color: #666;
+        }
+
+        .keys-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .keys-table th,
+        .keys-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .keys-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .keys-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .key-value {
+            font-family: 'Courier New', monospace;
+            background: #f8f9fa;
+            padding: 0.25rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+
+        .key-valid {
+            color: #28a745;
+            font-weight: 500;
+        }
+
+        .key-rate-limited {
+            color: #ffc107;
+            font-weight: 500;
+        }
+
+        .repository-link {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .repository-link:hover {
+            text-decoration: underline;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+        }
+
+        .no-keys {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .control-group {
+                grid-template-columns: 1fr;
+            }
+            
+            .keys-header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .keys-table {
+                font-size: 0.9rem;
+            }
+            
+            .keys-table th,
+            .keys-table td {
+                padding: 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔑 Hajimi King</h1>
+            <p>密钥抓取管理面板</p>
+        </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <h3 id="totalKeys">-</h3>
+                <p>总密钥数</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="validKeys">-</h3>
+                <p>有效密钥</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="rateLimitedKeys">-</h3>
+                <p>限流密钥</p>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h3>🔍 筛选条件</h3>
+            <div class="control-group">
+                <div class="form-group">
+                    <label for="keyType">密钥类型</label>
+                    <select id="keyType">
+                        <option value="all">全部</option>
+                        <option value="valid">有效密钥</option>
+                        <option value="rate_limited">限流密钥</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="search">搜索</label>
+                    <input type="text" id="search" placeholder="搜索密钥、仓库或文件...">
+                </div>
+                <div class="form-group">
+                    <label for="repository">仓库</label>
+                    <input type="text" id="repository" placeholder="筛选仓库...">
+                </div>
+                <div class="form-group">
+                    <label for="pageSize">每页显示</label>
+                    <select id="pageSize">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+            </div>
+            <div class="control-group">
+                <button class="btn" onclick="loadKeys()">🔍 搜索</button>
+                <button class="btn btn-secondary" onclick="resetFilters()">🔄 重置</button>
+            </div>
+        </div>
+
+        <div class="keys-container">
+            <div class="keys-header">
+                <h3>📋 密钥列表</h3>
+                <div class="pagination">
+                    <button id="prevBtn" onclick="previousPage()">上一页</button>
+                    <span id="pageInfo">第 1 页，共 1 页</span>
+                    <button id="nextBtn" onclick="nextPage()">下一页</button>
+                </div>
+            </div>
+            <div id="keysContent">
+                <div class="loading">正在加载密钥数据...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+        let totalKeys = 0;
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+            loadKeys();
+        });
+
+        // 加载统计信息
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const stats = result.data;
+                    document.getElementById('totalKeys').textContent = stats.total_keys_count;
+                    document.getElementById('validKeys').textContent = stats.valid_keys_count;
+                    document.getElementById('rateLimitedKeys').textContent = stats.rate_limited_keys_count;
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        // 加载密钥列表
+        async function loadKeys() {
+            const keyType = document.getElementById('keyType').value;
+            const search = document.getElementById('search').value;
+            const repository = document.getElementById('repository').value;
+            const pageSize = document.getElementById('pageSize').value;
+            
+            const params = new URLSearchParams({
+                page: currentPage,
+                page_size: pageSize,
+                key_type: keyType,
+                search: search,
+                repository: repository
+            });
+            
+            const keysContent = document.getElementById('keysContent');
+            keysContent.innerHTML = '<div class="loading">正在加载密钥数据...</div>';
+            
+            try {
+                const response = await fetch(`/api/keys?${params}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    displayKeys(result.data);
+                } else {
+                    keysContent.innerHTML = `<div class="error">加载失败: ${result.message}</div>`;
+                }
+            } catch (error) {
+                keysContent.innerHTML = `<div class="error">网络错误: ${error.message}</div>`;
+            }
+        }
+
+        // 显示密钥列表
+        function displayKeys(data) {
+            const keysContent = document.getElementById('keysContent');
+            
+            if (data.keys.length === 0) {
+                keysContent.innerHTML = '<div class="no-keys">没有找到符合条件的密钥</div>';
+                return;
+            }
+            
+            currentPage = data.page;
+            totalPages = data.total_pages;
+            totalKeys = data.total;
+            
+            // 更新分页信息
+            document.getElementById('pageInfo').textContent = `第 ${currentPage} 页，共 ${totalPages} 页`;
+            document.getElementById('prevBtn').disabled = currentPage <= 1;
+            document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+            
+            // 生成表格
+            let tableHTML = `
+                <table class="keys-table">
+                    <thead>
+                        <tr>
+                            <th>密钥</th>
+                            <th>类型</th>
+                            <th>仓库</th>
+                            <th>文件路径</th>
+                            <th>发现时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.keys.forEach(key => {
+                const keyClass = key.rate_limited ? 'key-rate-limited' : 'key-valid';
+                const keyType = key.rate_limited ? '限流' : '有效';
+                const foundTime = new Date(key.found_at).toLocaleString('zh-CN');
+                
+                tableHTML += `
+                    <tr>
+                        <td>
+                            <div class="key-value">${key.key}</div>
+                        </td>
+                        <td>
+                            <span class="${keyClass}">${keyType}</span>
+                        </td>
+                        <td>
+                            <a href="${key.file_url}" target="_blank" class="repository-link">
+                                ${key.repository}
+                            </a>
+                        </td>
+                        <td>${key.file_path}</td>
+                        <td>${foundTime}</td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+            
+            keysContent.innerHTML = tableHTML;
+        }
+
+        // 上一页
+        function previousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                loadKeys();
+            }
+        }
+
+        // 下一页
+        function nextPage() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                loadKeys();
+            }
+        }
+
+        // 重置筛选条件
+        function resetFilters() {
+            document.getElementById('keyType').value = 'all';
+            document.getElementById('search').value = '';
+            document.getElementById('repository').value = '';
+            document.getElementById('pageSize').value = '20';
+            currentPage = 1;
+            loadKeys();
+        }
+
+        // 定时刷新统计信息
+        setInterval(loadStats, 30000); // 每30秒刷新一次
+    </script>
+</body>
+</html>

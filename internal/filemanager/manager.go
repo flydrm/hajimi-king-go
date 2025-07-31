@@ -233,3 +233,27 @@ func (fm *FileManager) NormalizeQuery(query string) string {
 
 	return strings.Join(normalizedParts, " ")
 }
+
+// GetFilesByPrefix 获取指定前缀的文件列表
+func (fm *FileManager) GetFilesByPrefix(prefix string) ([]string, error) {
+	var files []string
+	
+	// 读取数据目录中的所有文件
+	entries, err := os.ReadDir(fm.config.DataPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read data directory: %v", err)
+	}
+	
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
+			files = append(files, filepath.Join(fm.config.DataPath, entry.Name()))
+		}
+	}
+	
+	return files, nil
+}
+
+// ReadFileContent 读取文件内容
+func (fm *FileManager) ReadFileContent(filePath string) ([]byte, error) {
+	return os.ReadFile(filePath)
+}

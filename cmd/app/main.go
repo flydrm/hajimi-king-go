@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/api/option"
 
+	"hajimi-king-go/internal/api"
 	"hajimi-king-go/internal/config"
 	"hajimi-king-go/internal/filemanager"
 	"hajimi-king-go/internal/github"
@@ -34,6 +36,7 @@ type HajimiKing struct {
 	githubClient *github.Client
 	fileManager  *filemanager.FileManager
 	syncUtils    *syncutils.SyncUtils
+	apiServer    *api.APIServer
 	checkpoint   *models.Checkpoint
 	skipStats    map[string]int
 }
@@ -55,12 +58,19 @@ func NewHajimiKing() *HajimiKing {
 	// 创建同步工具
 	syncUtils := syncutils.NewSyncUtils(cfg)
 
+	// 创建API服务器
+	var apiServer *api.APIServer
+	if cfg.APIEnabled {
+		apiServer = api.NewAPIServer(cfg, fileManager)
+	}
+
 	return &HajimiKing{
 		config:       cfg,
 		logger:       log,
 		githubClient: githubClient,
 		fileManager:  fileManager,
 		syncUtils:    syncUtils,
+		apiServer:    apiServer,
 		skipStats:    map[string]int{
 			"time_filter":   0,
 			"sha_duplicate": 0,
@@ -104,6 +114,13 @@ func (hk *HajimiKing) Run() error {
 	balancerQueueCount, gptLoadQueueCount := hk.syncUtils.GetQueueStatus()
 	hk.logger.Infof("📊 Queue status - Balancer: %d, GPT Load: %d", balancerQueueCount, gptLoadQueueCount)
 
+	// 5.5 显示API服务器状态
+	if hk.apiServer != nil {
+		hk.logger.Infof("🌐 API server enabled on port %d", hk.config.APIPort)
+	} else {
+		hk.logger.Infof("🌐 API server disabled")
+	}
+
 	// 5. 显示系统信息
 	searchQueries := hk.fileManager.GetSearchQueries()
 	hk.logger.Info("📋 SYSTEM INFORMATION:")
@@ -127,6 +144,16 @@ func (hk *HajimiKing) Run() error {
 
 	// 启动同步服务
 	hk.syncUtils.Start()
+
+	// 启动API服务器
+	if hk.apiServer != nil {
+		go func() {
+			hk.logger.Infof("🌐 Starting API server on port %d", hk.config.APIPort)
+			if err := hk.apiServer.Start(); err != nil && err != http.ErrServerClosed {
+				hk.logger.Errorf("❌ API server error: %v", err)
+			}
+		}()
+	}
 
 	// 主循环
 	hk.mainLoop()
@@ -432,6 +459,14 @@ func (hk *HajimiKing) handleShutdown(validKeys, rateLimitedKeys int) {
 	
 	// 停止同步服务
 	hk.syncUtils.Stop()
+	
+	// 停止API服务器
+	if hk.apiServer != nil {
+		hk.logger.Info("🌐 Stopping API server...")
+		if err := hk.apiServer.Stop(); err != nil {
+			hk.logger.Errorf("❌ Error stopping API server: %v", err)
+		}
+	}
 	
 	// 确保程序立即退出
 	os.Exit(0)
