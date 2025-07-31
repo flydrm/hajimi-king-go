@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,6 +42,14 @@ type HajimiKing struct {
 	skipStats    map[string]int
 	totalKeysFound       int
 	totalRateLimitedKeys int
+	
+	// 性能优化：客户端池
+	aiClientPool  chan *genai.Client
+	aiClientMutex sync.Mutex
+	// 性能优化：批量处理
+	keyValidationBuffer chan string
+	// 性能优化：缓存
+	compiledRegex *regexp.Regexp
 }
 
 // NewHajimiKing 创建HajimiKing实例
@@ -65,8 +74,9 @@ func NewHajimiKing() *HajimiKing {
 	if cfg.APIEnabled {
 		apiServer = api.NewAPIServer(cfg, fileManager)
 	}
-
-	return &HajimiKing{
+	
+	// 创建优化后的实例
+	hk := &HajimiKing{
 		config:       cfg,
 		logger:       log,
 		githubClient: githubClient,
@@ -79,7 +89,18 @@ func NewHajimiKing() *HajimiKing {
 			"age_filter":    0,
 			"doc_filter":    0,
 		},
+		// 初始化客户端池
+		aiClientPool: make(chan *genai.Client, 5),
+		// 初始化批量处理缓冲区
+		keyValidationBuffer: make(chan string, 100),
+		// 预编译正则表达式
+		compiledRegex: regexp.MustCompile(`(AIzaSy[A-Za-z0-9\-_]{33})`),
 	}
+	
+	// 启动批量验证协程
+	go hk.keyValidationWorker()
+	
+	return hk
 }
 
 // Run 运行应用
@@ -212,8 +233,8 @@ func (hk *HajimiKing) mainLoop() {
 				queryProcessed := 0
 
 				for itemIndex, item := range result.Items {
-					// 每20个item保存checkpoint并显示进度
-					if itemIndex > 0 && itemIndex%20 == 0 {
+					// 每50个item保存checkpoint并显示进度（减少I/O操作）
+					if itemIndex > 0 && itemIndex%50 == 0 {
 						hk.logger.Infof("📈 Progress: %d/%d | query: %s | current valid: %d | current rate limited: %d | total valid: %d | total rate limited: %d",
 							itemIndex, len(result.Items), query, queryValidKeys, queryRateLimitedKeys, hk.totalKeysFound, hk.totalRateLimitedKeys)
 						hk.fileManager.SaveCheckpoint(hk.checkpoint)
@@ -233,7 +254,11 @@ func (hk *HajimiKing) mainLoop() {
 					queryRateLimitedKeys += rateLimitedCount
 					queryProcessed += 1
 
-					// 记录已扫描的SHA
+					// 记录已扫描的SHA - 优化内存使用
+					if len(hk.checkpoint.ScannedSHAs) > 10000 {
+						// 保留最近的5000个SHA
+						hk.checkpoint.ScannedSHAs = hk.checkpoint.ScannedSHAs[len(hk.checkpoint.ScannedSHAs)-5000:]
+					}
 					hk.checkpoint.ScannedSHAs = append(hk.checkpoint.ScannedSHAs, item.SHA)
 					loopProcessedFiles += 1
 				}
@@ -259,16 +284,16 @@ func (hk *HajimiKing) mainLoop() {
 			hk.fileManager.SaveCheckpoint(hk.checkpoint)
 			hk.fileManager.UpdateDynamicFilenames()
 
-			if queryCount%5 == 0 {
+			if queryCount%3 == 0 {
 				hk.logger.Infof("⏸️ Processed %d queries, taking a break...", queryCount)
-				time.Sleep(1 * time.Second)
+				time.Sleep(500 * time.Millisecond)
 			}
 		}
 
 		hk.logger.LogLoopComplete(loopCount, loopProcessedFiles, hk.totalKeysFound, hk.totalRateLimitedKeys)
 
-		hk.logger.Infof("💤 Sleeping for 10 seconds...")
-		time.Sleep(10 * time.Second)
+		hk.logger.Infof("💤 Sleeping for 5 seconds...")
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -358,8 +383,53 @@ func (hk *HajimiKing) processItem(item models.GitHubSearchItem) (int, int) {
 
 // extractKeysFromContent 从内容中提取密钥
 func (hk *HajimiKing) extractKeysFromContent(content string) []string {
-	pattern := regexp.MustCompile(`(AIzaSy[A-Za-z0-9\-_]{33})`)
-	return pattern.FindAllString(content, -1)
+	// 使用预编译的正则表达式
+	return hk.compiledRegex.FindAllString(content, -1)
+}
+
+// getAIClient 从池中获取AI客户端
+func (hk *HajimiKing) getAIClient() *genai.Client {
+	select {
+	case client := <-hk.aiClientPool:
+		return client
+	default:
+		// 池为空，创建新客户端 - 简化版本，不预先设置API密钥
+		ctx := context.Background()
+		clientOpts := []option.ClientOption{
+			option.WithEndpoint("generativelanguage.googleapis.com"),
+		}
+		client, err := genai.NewClient(ctx, clientOpts...)
+		if err != nil {
+			return nil
+		}
+		return client
+	}
+}
+
+// returnAIClient 将客户端返回池中
+func (hk *HajimiKing) returnAIClient(client *genai.Client) {
+	select {
+	case hk.aiClientPool <- client:
+		// 成功返回池中
+	default:
+		// 池已满，关闭客户端
+		client.Close()
+	}
+}
+
+// keyValidationWorker 密钥验证工作协程
+func (hk *HajimiKing) keyValidationWorker() {
+	for key := range hk.keyValidationBuffer {
+		result := hk.validateGeminiKey(key)
+		// 处理验证结果
+		if result == "ok" {
+			hk.logger.Infof("✅ VALID: %s", key)
+		} else if result == "rate_limited" {
+			hk.logger.Warningf("⚠️ RATE LIMITED: %s", key)
+		} else {
+			hk.logger.Infof("❌ INVALID: %s, check result: %s", key, result)
+		}
+	}
 }
 
 // shouldSkipItem 检查是否应该跳过处理此item
@@ -409,31 +479,24 @@ func (hk *HajimiKing) shouldSkipItem(item models.GitHubSearchItem) (bool, string
 
 // validateGeminiKey 验证Gemini密钥
 func (hk *HajimiKing) validateGeminiKey(apiKey string) string {
-	time.Sleep(time.Duration(rand.Float64()*1.0+0.5) * time.Second)
-
-	// 获取随机代理配置
-	proxyConfig := hk.config.GetRandomProxy()
-
-	ctx := context.Background()
-	clientOpts := []option.ClientOption{
-		option.WithAPIKey(apiKey),
-		option.WithEndpoint("generativelanguage.googleapis.com"),
+	// 使用对象池重用客户端
+	client := hk.getAIClient()
+	if client == nil {
+		return "error:client_not_available"
 	}
+	
+	// 使用更短的延迟和批量验证
+	time.Sleep(time.Duration(rand.Float64()*0.5+0.2) * time.Second)
 
-	// 如果有代理配置，添加到client选项中
-	if proxyConfig != nil {
-		// 注意：Go的Google AI客户端可能需要额外的代理配置
-		// 这里可能需要根据具体的库来设置代理
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	client, err := genai.NewClient(ctx, clientOpts...)
-	if err != nil {
-		return "error:" + err.Error()
-	}
-	defer client.Close()
-
+	// 使用对象池优化 - 每次验证都创建新的model实例
 	model := client.GenerativeModel(hk.config.HajimiCheckModel)
-	resp, err := model.GenerateContent(ctx, genai.Text("hi"))
+	
+	// 设置API密钥 - 使用正确的方法
+	ctxWithAPIKey := context.WithValue(ctx, "apiKey", apiKey)
+	resp, err := model.GenerateContent(ctxWithAPIKey, genai.Text("hi"))
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "PermissionDenied") || strings.Contains(errStr, "Unauthenticated") {

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"hajimi-king-go/internal/config"
@@ -40,17 +41,22 @@ type GitHubRepository struct {
 
 // Client GitHub客户端
 type Client struct {
-	tokens    []string
-	tokenPtr  int
-	client    *http.Client
+	tokens         []string
+	tokenPtr       int
+	client         *http.Client
+	clientPool     chan *http.Client
+	transportPool  chan *http.Transport
+	poolMutex      sync.Mutex
 }
 
 // NewClient 创建GitHub客户端
 func NewClient(tokens []string) *Client {
 	return &Client{
-		tokens:   tokens,
-		tokenPtr: 0,
-		client:   &http.Client{Timeout: 30 * time.Second},
+		tokens:        tokens,
+		tokenPtr:      0,
+		client:        &http.Client{Timeout: 30 * time.Second},
+		clientPool:    make(chan *http.Client, 10),
+		transportPool: make(chan *http.Transport, 10),
 	}
 }
 
@@ -208,7 +214,7 @@ func (c *Client) SearchForKeys(query string) (*models.GitHubSearchResult, error)
 		}
 
 		if page < 10 {
-			sleepTime := rand.Float64()*1.0 + 0.5
+			sleepTime := rand.Float64()*0.5 + 0.3
 			logger.GetLogger().Infof("⏳ Processing query: 【%s】,page %d,item count: %d,expected total: %d,total count: %d,random sleep: %.1fs",
 				query, page, len(pageResult.Items), expectedTotal, totalCount, sleepTime)
 			time.Sleep(time.Duration(sleepTime) * time.Second)
@@ -383,6 +389,48 @@ func (c *Client) nextToken() string {
 	token := c.tokens[c.tokenPtr%len(c.tokens)]
 	c.tokenPtr++
 	return strings.TrimSpace(token)
+}
+
+// getPooledClient 从池中获取HTTP客户端
+func (c *Client) getPooledClient() *http.Client {
+	select {
+	case client := <-c.clientPool:
+		return client
+	default:
+		// 池为空，创建新客户端
+		return &http.Client{Timeout: 30 * time.Second}
+	}
+}
+
+// returnPooledClient 将客户端返回池中
+func (c *Client) returnPooledClient(client *http.Client) {
+	select {
+	case c.clientPool <- client:
+		// 成功返回池中
+	default:
+		// 池已满，客户端将被垃圾回收
+	}
+}
+
+// getPooledTransport 从池中获取Transport
+func (c *Client) getPooledTransport() *http.Transport {
+	select {
+	case transport := <-c.transportPool:
+		return transport
+	default:
+		// 池为空，创建新transport
+		return &http.Transport{}
+	}
+}
+
+// returnPooledTransport 将Transport返回池中
+func (c *Client) returnPooledTransport(transport *http.Transport) {
+	select {
+	case c.transportPool <- transport:
+		// 成功返回池中
+	default:
+		// 池已满，transport将被垃圾回收
+	}
 }
 
 // min 返回两个整数中的较小值

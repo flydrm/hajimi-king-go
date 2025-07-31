@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -33,6 +34,7 @@ type KeysCache struct {
 	ValidKeys       []models.KeyInfo `json:"valid_keys"`
 	RateLimitedKeys []models.KeyInfo `json:"rate_limited_keys"`
 	LastUpdated     time.Time        `json:"last_updated"`
+	cacheMutex      sync.RWMutex     `json:"-"`
 }
 
 // APIResponse API响应结构
@@ -189,6 +191,10 @@ func (s *APIServer) handleGetStats(w http.ResponseWriter, r *http.Request) {
 	
 	s.updateCacheIfNeeded()
 	
+	// 使用读写锁保护缓存访问
+	s.keysCache.cacheMutex.RLock()
+	defer s.keysCache.cacheMutex.RUnlock()
+	
 	response := APIResponse{
 		Success: true,
 		Message: "Stats retrieved successfully",
@@ -222,6 +228,10 @@ func (s *APIServer) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) getFilteredKeys(keyType, search, repository string) ([]models.KeyInfo, int) {
 	s.updateCacheIfNeeded()
 	
+	// 使用读写锁保护缓存访问
+	s.keysCache.cacheMutex.RLock()
+	defer s.keysCache.cacheMutex.RUnlock()
+	
 	var allKeys []models.KeyInfo
 	
 	switch keyType {
@@ -230,17 +240,23 @@ func (s *APIServer) getFilteredKeys(keyType, search, repository string) ([]model
 	case "rate_limited":
 		allKeys = s.keysCache.RateLimitedKeys
 	default:
-		allKeys = append(s.keysCache.ValidKeys, s.keysCache.RateLimitedKeys...)
+		// 预分配切片容量
+		allKeys = make([]models.KeyInfo, 0, len(s.keysCache.ValidKeys)+len(s.keysCache.RateLimitedKeys))
+		allKeys = append(allKeys, s.keysCache.ValidKeys...)
+		allKeys = append(allKeys, s.keysCache.RateLimitedKeys...)
 	}
 	
+	// 预分配过滤结果切片
+	filteredKeys := make([]models.KeyInfo, 0, len(allKeys))
+	
 	// 应用过滤
-	filteredKeys := []models.KeyInfo{}
 	for _, key := range allKeys {
 		// 搜索过滤
 		if search != "" {
-			if !strings.Contains(strings.ToLower(key.Key), strings.ToLower(search)) &&
-				!strings.Contains(strings.ToLower(key.Repository), strings.ToLower(search)) &&
-				!strings.Contains(strings.ToLower(key.FilePath), strings.ToLower(search)) {
+			searchLower := strings.ToLower(search)
+			if !strings.Contains(strings.ToLower(key.Key), searchLower) &&
+				!strings.Contains(strings.ToLower(key.Repository), searchLower) &&
+				!strings.Contains(strings.ToLower(key.FilePath), searchLower) {
 				continue
 			}
 		}
@@ -265,19 +281,30 @@ func (s *APIServer) getFilteredKeys(keyType, search, repository string) ([]model
 
 // updateCacheIfNeeded 更新缓存（如果需要）
 func (s *APIServer) updateCacheIfNeeded() {
-	if s.keysCache.LastUpdated.IsZero() || time.Since(s.keysCache.LastUpdated) > 5*time.Minute {
+	if s.keysCache.LastUpdated.IsZero() || time.Since(s.keysCache.LastUpdated) > 10*time.Minute {
 		s.updateCache()
 	}
 }
 
 // updateCache 更新密钥缓存
 func (s *APIServer) updateCache() {
+	s.keysCache.cacheMutex.Lock()
+	defer s.keysCache.cacheMutex.Unlock()
+	
 	validKeys := s.loadKeysFromFile(s.config.ValidKeyPrefix)
 	rateLimitedKeys := s.loadKeysFromFile(s.config.RateLimitedKeyPrefix)
 	
 	// 设置rate_limited标志
 	for i := range rateLimitedKeys {
 		rateLimitedKeys[i].RateLimited = true
+	}
+	
+	// 限制缓存大小，防止内存泄漏
+	if len(validKeys) > 5000 {
+		validKeys = validKeys[:5000]
+	}
+	if len(rateLimitedKeys) > 5000 {
+		rateLimitedKeys = rateLimitedKeys[:5000]
 	}
 	
 	s.keysCache.ValidKeys = validKeys
@@ -386,7 +413,7 @@ func (s *APIServer) parseKeyFile(filePath string) ([]models.KeyInfo, error) {
 
 // startCacheUpdater 启动缓存更新器
 func (s *APIServer) startCacheUpdater() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 	
 	for range ticker.C {
