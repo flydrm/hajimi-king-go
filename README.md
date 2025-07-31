@@ -3,7 +3,7 @@
 🎪 **Hajimi King Go** - 人人都是哈基米大王 👑  
 
 这是一个用于从GitHub搜索和验证Google Gemini API密钥的Go语言版本项目。  
-基于原Python版本重构，提供更好的性能和并发处理能力。
+基于 [GakkiNoOne/hajimi-king](https://github.com/GakkiNoOne/hajimi-king) 项目重构，提供更好的性能和并发处理能力。
 
 ⚠️ **注意**：本项目正处于beta期间，功能、结构、接口等都有可能变化，不保证稳定性，请自行承担风险。
 
@@ -28,6 +28,8 @@ hajimi-king-go/
 ├── cmd/app/                    # 应用程序入口
 │   └── main.go                  # 主程序文件
 ├── internal/
+│   ├── api/                    # API服务器
+│   │   └── server.go           # REST API服务器
 │   ├── config/                 # 配置管理
 │   │   └── config.go           # 配置加载和管理
 │   ├── logger/                 # 日志管理
@@ -40,6 +42,8 @@ hajimi-king-go/
 │   │   └── sync.go             # 外部服务同步
 │   └── models/                 # 数据模型
 │       └── models.go           # 数据结构定义
+├── web/                        # 前端界面
+│   └── index.html              # 密钥管理面板
 ├── go.mod                      # Go模块文件
 ├── go.sum                      # 依赖校验文件
 ├── .env.example                # 环境变量示例
@@ -109,8 +113,37 @@ tail -f data/logs/keys_valid_detail_*.log
 # 查看找到的有效密钥
 cat data/keys/keys_valid_*.txt
 
+# 启动Web界面（需要设置API_ENABLED=true）
+# 访问 http://localhost:8080
+open http://localhost:8080
+
 # 停止程序
 Ctrl + C
+```
+
+### 6. API和Web界面使用 🌐
+
+当启用API服务器后，可以通过以下方式访问：
+
+- **Web界面**: http://localhost:8080
+- **API文档**:
+  - `GET /api/keys` - 获取密钥列表
+  - `GET /api/stats` - 获取统计信息  
+  - `GET /api/health` - 健康检查
+
+**API参数示例**:
+```bash
+# 获取第一页密钥列表
+curl "http://localhost:8080/api/keys?page=1&page_size=20"
+
+# 搜索特定仓库的密钥
+curl "http://localhost:8080/api/keys?repository=user/repo"
+
+# 只获取有效密钥
+curl "http://localhost:8080/api/keys?key_type=valid"
+
+# 搜索包含特定字符串的密钥
+curl "http://localhost:8080/api/keys?search=AIzaSy"
 ```
 
 ## ⚙️ 配置变量说明 📖
@@ -132,6 +165,8 @@ Ctrl + C
 | `DATE_RANGE_DAYS` | `730` | 仓库年龄过滤（天数），只扫描指定天数内的仓库 📅 |
 | `QUERIES_FILE` | `queries.txt` | 搜索查询配置文件路径 🎯 |
 | `HAJIMI_CHECK_MODEL` | `gemini-2.5-flash` | 用于验证key有效的模型 🤖 |
+| `API_ENABLED` | `false` | 是否启用API服务器和Web界面 🌐 |
+| `API_PORT` | `8080` | API服务器端口 🔌 |
 | `GEMINI_BALANCER_SYNC_ENABLED` | `false` | 是否启用Gemini Balancer同步 🔗 |
 | `GEMINI_BALANCER_URL` | 空 | Gemini Balancer服务地址 🌐 |
 | `GEMINI_BALANCER_AUTH` | 空 | Gemini Balancer认证信息 🔐 |
@@ -165,6 +200,8 @@ DATA_PATH=./data
 DATE_RANGE_DAYS=730
 QUERIES_FILE=queries.txt
 HAJIMI_CHECK_MODEL=gemini-2.5-flash
+API_ENABLED=true
+API_PORT=8080
 PROXY=
 
 # Gemini Balancer同步配置
@@ -232,8 +269,12 @@ services:
       # 可选配置
       - HAJIMI_CHECK_MODEL=gemini-2.5-flash
       - QUERIES_FILE=queries.txt
+      - API_ENABLED=true
+      - API_PORT=8080
     volumes:
       - ./data:/app/data
+    ports:
+      - "8080:8080"
     working_dir: /app
 ```
 
@@ -250,60 +291,9 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+    ports:
+      - "8080:8080"
     working_dir: /app
-```
-
-### Dockerfile
-
-```dockerfile
-# 构建阶段
-FROM golang:1.21-alpine AS builder
-
-# 设置工作目录
-WORKDIR /app
-
-# 安装必要的工具
-RUN apk add --no-cache git ca-certificates
-
-# 复制go mod文件
-COPY go.mod go.sum ./
-
-# 下载依赖
-RUN go mod download
-
-# 复制源代码
-COPY . .
-
-# 构建应用
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hajimi-king cmd/app/main.go
-
-# 运行阶段
-FROM alpine:latest
-
-# 安装ca-certificates用于HTTPS请求
-RUN apk --no-cache add ca-certificates tzdata
-
-# 设置工作目录
-WORKDIR /root/
-
-# 从构建阶段复制二进制文件
-COPY --from=builder /app/hajimi-king .
-
-# 复制配置文件示例
-COPY --from=builder /app/queries.example .
-COPY --from=builder /app/.env.example .
-
-# 创建数据目录
-RUN mkdir -p data
-
-# 暴露端口（如果需要）
-EXPOSE 8080
-
-# 设置环境变量
-ENV TZ=Asia/Shanghai
-
-# 运行应用
-CMD ["./hajimi-king"]
 ```
 
 ## 📊 性能优势
