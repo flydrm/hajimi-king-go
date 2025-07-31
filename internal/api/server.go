@@ -319,16 +319,14 @@ func (s *APIServer) extractTimeFromFilename(filePath string) time.Time {
 		dateStr := matches[1]
 		timeStr := matches[2]
 		
-		// 解析时间：YYYYMMDD_HHMMSS，使用UTC时区
+		// 解析时间：YYYYMMDD_HHMMSS，使用本地时区
 		layout := "20060102 150405"
 		timeStrFull := dateStr + " " + timeStr
 		
-		// 使用UTC时区解析时间
-		parsedTime, err := time.Parse(layout, timeStrFull)
+		// 直接使用本地时区解析时间，不进行UTC转换
+		parsedTime, err := time.ParseInLocation(layout, timeStrFull, time.Local)
 		if err == nil {
-			// 将UTC时间转换为本地时间
-			localTime := parsedTime.Local()
-			return localTime
+			return parsedTime
 		}
 	}
 	

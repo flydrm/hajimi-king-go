@@ -39,6 +39,8 @@ type HajimiKing struct {
 	apiServer    *api.APIServer
 	checkpoint   *models.Checkpoint
 	skipStats    map[string]int
+	totalKeysFound       int
+	totalRateLimitedKeys int
 }
 
 // NewHajimiKing 创建HajimiKing实例
@@ -163,8 +165,8 @@ func (hk *HajimiKing) Run() error {
 
 // mainLoop 主循环
 func (hk *HajimiKing) mainLoop() {
-	totalKeysFound := 0
-	totalRateLimitedKeys := 0
+	hk.totalKeysFound = 0
+	hk.totalRateLimitedKeys = 0
 	loopCount := 0
 
 	searchQueries := hk.fileManager.GetSearchQueries()
@@ -200,7 +202,7 @@ func (hk *HajimiKing) mainLoop() {
 					// 每20个item保存checkpoint并显示进度
 					if itemIndex > 0 && itemIndex%20 == 0 {
 						hk.logger.Infof("📈 Progress: %d/%d | query: %s | current valid: %d | current rate limited: %d | total valid: %d | total rate limited: %d",
-							itemIndex, len(result.Items), query, queryValidKeys, queryRateLimitedKeys, totalKeysFound, totalRateLimitedKeys)
+							itemIndex, len(result.Items), query, queryValidKeys, queryRateLimitedKeys, hk.totalKeysFound, hk.totalRateLimitedKeys)
 						hk.fileManager.SaveCheckpoint(hk.checkpoint)
 						hk.fileManager.UpdateDynamicFilenames()
 					}
@@ -223,8 +225,8 @@ func (hk *HajimiKing) mainLoop() {
 					loopProcessedFiles += 1
 				}
 
-				totalKeysFound += queryValidKeys
-				totalRateLimitedKeys += queryRateLimitedKeys
+				hk.totalKeysFound += queryValidKeys
+				hk.totalRateLimitedKeys += queryRateLimitedKeys
 
 				if queryProcessed > 0 {
 					hk.logger.LogQueryProgress(i+1, len(searchQueries), queryProcessed, queryValidKeys, queryRateLimitedKeys)
@@ -250,7 +252,7 @@ func (hk *HajimiKing) mainLoop() {
 			}
 		}
 
-		hk.logger.LogLoopComplete(loopCount, loopProcessedFiles, totalKeysFound, totalRateLimitedKeys)
+		hk.logger.LogLoopComplete(loopCount, loopProcessedFiles, hk.totalKeysFound, hk.totalRateLimitedKeys)
 
 		hk.logger.Infof("💤 Sleeping for 10 seconds...")
 		time.Sleep(10 * time.Second)
@@ -525,6 +527,6 @@ func main() {
 	<-sigChan
 	app.logger.Info("🛑 接收到终止信号，正在关闭程序...")
 	
-	// 执行清理操作
-	app.handleShutdown(0, 0)
+	// 执行清理操作，传递实际的统计信息
+	app.handleShutdown(app.totalKeysFound, app.totalRateLimitedKeys)
 }
