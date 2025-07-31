@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"regexp"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -43,9 +42,6 @@ type HajimiKing struct {
 	totalKeysFound       int
 	totalRateLimitedKeys int
 	
-	// 性能优化：客户端池
-	aiClientPool  chan *genai.Client
-	aiClientMutex sync.Mutex
 	// 性能优化：批量处理
 	keyValidationBuffer chan string
 	// 性能优化：缓存
@@ -89,8 +85,6 @@ func NewHajimiKing() *HajimiKing {
 			"age_filter":    0,
 			"doc_filter":    0,
 		},
-		// 初始化客户端池
-		aiClientPool: make(chan *genai.Client, 5),
 		// 初始化批量处理缓冲区
 		keyValidationBuffer: make(chan string, 100),
 		// 预编译正则表达式
@@ -387,35 +381,6 @@ func (hk *HajimiKing) extractKeysFromContent(content string) []string {
 	return hk.compiledRegex.FindAllString(content, -1)
 }
 
-// getAIClient 从池中获取AI客户端
-func (hk *HajimiKing) getAIClient() *genai.Client {
-	select {
-	case client := <-hk.aiClientPool:
-		return client
-	default:
-		// 池为空，创建新客户端 - 简化版本，不预先设置API密钥
-		ctx := context.Background()
-		clientOpts := []option.ClientOption{
-			option.WithEndpoint("generativelanguage.googleapis.com"),
-		}
-		client, err := genai.NewClient(ctx, clientOpts...)
-		if err != nil {
-			return nil
-		}
-		return client
-	}
-}
-
-// returnAIClient 将客户端返回池中
-func (hk *HajimiKing) returnAIClient(client *genai.Client) {
-	select {
-	case hk.aiClientPool <- client:
-		// 成功返回池中
-	default:
-		// 池已满，关闭客户端
-		client.Close()
-	}
-}
 
 // keyValidationWorker 密钥验证工作协程
 func (hk *HajimiKing) keyValidationWorker() {
@@ -479,24 +444,27 @@ func (hk *HajimiKing) shouldSkipItem(item models.GitHubSearchItem) (bool, string
 
 // validateGeminiKey 验证Gemini密钥
 func (hk *HajimiKing) validateGeminiKey(apiKey string) string {
-	// 使用对象池重用客户端
-	client := hk.getAIClient()
-	if client == nil {
-		return "error:client_not_available"
-	}
-	
 	// 使用更短的延迟和批量验证
 	time.Sleep(time.Duration(rand.Float64()*0.5+0.2) * time.Second)
+
+	// 为每个密钥创建新的客户端，确保API密钥正确设置
+	ctx := context.Background()
+	clientOpts := []option.ClientOption{
+		option.WithAPIKey(apiKey),
+		option.WithEndpoint("generativelanguage.googleapis.com"),
+	}
+	
+	client, err := genai.NewClient(ctx, clientOpts...)
+	if err != nil {
+		return "error:" + err.Error()
+	}
+	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// 使用对象池优化 - 每次验证都创建新的model实例
 	model := client.GenerativeModel(hk.config.HajimiCheckModel)
-	
-	// 设置API密钥 - 使用正确的方法
-	ctxWithAPIKey := context.WithValue(ctx, "apiKey", apiKey)
-	resp, err := model.GenerateContent(ctxWithAPIKey, genai.Text("hi"))
+	resp, err := model.GenerateContent(ctx, genai.Text("hi"))
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "PermissionDenied") || strings.Contains(errStr, "Unauthenticated") {
