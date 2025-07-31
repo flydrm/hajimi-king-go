@@ -74,9 +74,10 @@ func (s *APIServer) Start() error {
 	mux := http.NewServeMux()
 	
 	// 设置路由
-	mux.HandleFunc("/api/keys", s.corsMiddleware(s.handleGetKeys))
-	mux.HandleFunc("/api/stats", s.corsMiddleware(s.handleGetStats))
-	mux.HandleFunc("/api/health", s.corsMiddleware(s.handleHealthCheck))
+	mux.HandleFunc("/api/auth", s.handleAuth)
+	mux.HandleFunc("/api/keys", s.authMiddleware(s.corsMiddleware(s.handleGetKeys)))
+	mux.HandleFunc("/api/stats", s.authMiddleware(s.corsMiddleware(s.handleGetStats)))
+	mux.HandleFunc("/api/health", s.authMiddleware(s.corsMiddleware(s.handleHealthCheck)))
 	mux.HandleFunc("/", s.serveStaticFiles)
 	
 	// 创建HTTP服务器
@@ -353,6 +354,88 @@ func (s *APIServer) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
+			return
+		}
+		
+		next(w, r)
+	}
+}
+
+// handleAuth 处理认证请求
+func (s *APIServer) handleAuth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	if r.Method != http.MethodPost {
+		s.writeErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	
+	// 如果没有设置认证密钥，则直接允许访问
+	if s.config.APIAuthKey == "" {
+		response := APIResponse{
+			Success: true,
+			Message: "Authentication disabled",
+			Data: map[string]string{
+				"token": "no-auth-required",
+			},
+		}
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+	
+	// 从请求中获取认证密钥
+	var authRequest struct {
+		AuthKey string `json:"auth_key"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&authRequest); err != nil {
+		s.writeErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	
+	// 验证认证密钥
+	if authRequest.AuthKey == s.config.APIAuthKey {
+		response := APIResponse{
+			Success: true,
+			Message: "Authentication successful",
+			Data: map[string]string{
+				"token": s.config.APIAuthKey,
+			},
+		}
+		json.NewEncoder(w).Encode(response)
+	} else {
+		s.writeErrorResponse(w, http.StatusUnauthorized, "Invalid authentication key")
+	}
+}
+
+// authMiddleware 认证中间件
+func (s *APIServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// 如果没有设置认证密钥，则直接允许访问
+		if s.config.APIAuthKey == "" {
+			next(w, r)
+			return
+		}
+		
+		// 从请求头中获取认证信息
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			s.writeErrorResponse(w, http.StatusUnauthorized, "Authorization header required")
+			return
+		}
+		
+		// 检查认证格式
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			s.writeErrorResponse(w, http.StatusUnauthorized, "Invalid authorization format")
+			return
+		}
+		
+		// 提取token
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		
+		// 验证token
+		if token != s.config.APIAuthKey {
+			s.writeErrorResponse(w, http.StatusUnauthorized, "Invalid token")
 			return
 		}
 		

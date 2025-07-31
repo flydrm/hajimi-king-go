@@ -127,24 +127,47 @@ Ctrl + C
 
 - **Web界面**: http://localhost:8080
 - **API文档**:
+  - `POST /api/auth` - 认证登录
   - `GET /api/keys` - 获取密钥列表
   - `GET /api/stats` - 获取统计信息  
   - `GET /api/health` - 健康检查
 
-**API参数示例**:
+#### 🔐 安全认证
+
+如果设置了 `API_AUTH_KEY`，访问Web界面和API需要进行认证：
+
+1. **Web界面**: 打开 http://localhost:8080，输入访问密钥
+2. **API访问**: 需要在请求头中包含认证信息
+
+**API认证示例**:
 ```bash
-# 获取第一页密钥列表
-curl "http://localhost:8080/api/keys?page=1&page_size=20"
+# 1. 获取认证token
+curl -X POST "http://localhost:8080/api/auth" \
+  -H "Content-Type: application/json" \
+  -d '{"auth_key": "your_secure_access_key_here"}'
 
-# 搜索特定仓库的密钥
-curl "http://localhost:8080/api/keys?repository=user/repo"
+# 2. 使用token访问API
+curl "http://localhost:8080/api/keys?page=1&page_size=20" \
+  -H "Authorization: Bearer your_secure_access_key_here"
 
-# 只获取有效密钥
-curl "http://localhost:8080/api/keys?key_type=valid"
+# 3. 搜索特定仓库的密钥
+curl "http://localhost:8080/api/keys?repository=user/repo" \
+  -H "Authorization: Bearer your_secure_access_key_here"
 
-# 搜索包含特定字符串的密钥
-curl "http://localhost:8080/api/keys?search=AIzaSy"
+# 4. 只获取有效密钥
+curl "http://localhost:8080/api/keys?key_type=valid" \
+  -H "Authorization: Bearer your_secure_access_key_here"
+
+# 5. 搜索包含特定字符串的密钥
+curl "http://localhost:8080/api/keys?search=AIzaSy" \
+  -H "Authorization: Bearer your_secure_access_key_here"
 ```
+
+> ⚠️ **安全提醒**: 
+> - 请使用强密码作为 `API_AUTH_KEY`
+> - 定期更换访问密钥
+> - 不要将访问密钥提交到版本控制
+> - 建议在生产环境中启用HTTPS
 
 ## ⚙️ 配置变量说明 📖
 
@@ -167,6 +190,7 @@ curl "http://localhost:8080/api/keys?search=AIzaSy"
 | `HAJIMI_CHECK_MODEL` | `gemini-2.5-flash` | 用于验证key有效的模型 🤖 |
 | `API_ENABLED` | `false` | 是否启用API服务器和Web界面 🌐 |
 | `API_PORT` | `8080` | API服务器端口 🔌 |
+| `API_AUTH_KEY` | 空 | API访问密钥（设置后需要登录才能访问） 🔐 |
 | `GEMINI_BALANCER_SYNC_ENABLED` | `false` | 是否启用Gemini Balancer同步 🔗 |
 | `GEMINI_BALANCER_URL` | 空 | Gemini Balancer服务地址 🌐 |
 | `GEMINI_BALANCER_AUTH` | 空 | Gemini Balancer认证信息 🔐 |
@@ -202,6 +226,7 @@ QUERIES_FILE=queries.txt
 HAJIMI_CHECK_MODEL=gemini-2.5-flash
 API_ENABLED=true
 API_PORT=8080
+API_AUTH_KEY=your_secure_access_key_here
 PROXY=
 
 # Gemini Balancer同步配置
@@ -271,6 +296,7 @@ services:
       - QUERIES_FILE=queries.txt
       - API_ENABLED=true
       - API_PORT=8080
+      - API_AUTH_KEY=your_secure_access_key_here
     volumes:
       - ./data:/app/data
     ports:

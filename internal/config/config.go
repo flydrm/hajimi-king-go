@@ -37,6 +37,7 @@ type Config struct {
 	GPTLoadGroupName             string   // GPT Load组名称列表
 	APIEnabled                   bool     // 是否启用API服务器
 	APIPort                      int      // API服务器端口
+	APIAuthKey                   string   // API访问密钥
 }
 
 var globalConfig *Config
@@ -75,6 +76,7 @@ func LoadConfig() *Config {
 		GPTLoadGroupName:             os.Getenv("GPT_LOAD_GROUP_NAME"),
 		APIEnabled:                   parseBool(os.Getenv("API_ENABLED")),
 		APIPort:                      getEnvIntWithDefault("API_PORT", 8080),
+		APIAuthKey:                   os.Getenv("API_AUTH_KEY"),
 	}
 
 	// 设置默认黑名单，用于过滤文档和示例文件

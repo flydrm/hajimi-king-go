@@ -17,6 +17,83 @@
             color: #333;
         }
 
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .login-form {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-form h2 {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: #333;
+        }
+
+        .login-form .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .login-form label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #555;
+        }
+
+        .login-form input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        .login-form input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+        }
+
+        .login-form .btn {
+            width: 100%;
+            padding: 0.75rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .login-form .btn:hover {
+            background: #5a6fd8;
+        }
+
+        .login-error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 0.75rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .main-app {
+            display: none;
+        }
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
@@ -294,10 +371,30 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- 登录界面 -->
+    <div id="loginContainer" class="login-container">
+        <div class="login-form">
+            <h2>🔐 登录验证</h2>
+            <div id="loginError" class="login-error" style="display: none;"></div>
+            <div class="form-group">
+                <label for="authKey">访问密钥</label>
+                <input type="password" id="authKey" placeholder="请输入访问密钥...">
+            </div>
+            <button class="btn" onclick="login()">🔓 登录</button>
+        </div>
+    </div>
+
+    <!-- 主应用界面 -->
+    <div id="mainApp" class="main-app">
+        <div class="container">
         <div class="header">
-            <h1>🔑 Hajimi King</h1>
-            <p>密钥抓取管理面板</p>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>🔑 Hajimi King</h1>
+                    <p>密钥抓取管理面板</p>
+                </div>
+                <button class="btn" onclick="logout()" style="background: #dc3545;">🚪 退出登录</button>
+            </div>
         </div>
 
         <div class="stats" id="stats">
@@ -518,6 +615,178 @@
 
         // 定时刷新统计信息
         setInterval(loadStats, 30000); // 每30秒刷新一次
+
+        // 认证相关变量
+        let authToken = null;
+
+        // 页面加载时检查认证状态
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuth();
+        });
+
+        // 检查认证状态
+        async function checkAuth() {
+            try {
+                // 先尝试获取统计信息，如果不需要认证则直接显示主界面
+                const response = await fetch('/api/stats');
+                if (response.ok) {
+                    showMainApp();
+                    loadStats();
+                    loadKeys();
+                } else {
+                    showLoginForm();
+                }
+            } catch (error) {
+                showLoginForm();
+            }
+        }
+
+        // 显示登录表单
+        function showLoginForm() {
+            document.getElementById('loginContainer').style.display = 'flex';
+            document.getElementById('mainApp').style.display = 'none';
+        }
+
+        // 显示主应用
+        function showMainApp() {
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('mainApp').style.display = 'block';
+        }
+
+        // 登录验证
+        async function login() {
+            const authKey = document.getElementById('authKey').value;
+            const loginError = document.getElementById('loginError');
+            
+            if (!authKey) {
+                showLoginError('请输入访问密钥');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/auth', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ auth_key: authKey }),
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    authToken = result.data.token;
+                    showMainApp();
+                    loadStats();
+                    loadKeys();
+                } else {
+                    showLoginError(result.message || '登录失败');
+                }
+            } catch (error) {
+                showLoginError('网络错误，请稍后重试');
+            }
+        }
+
+        // 显示登录错误
+        function showLoginError(message) {
+            const loginError = document.getElementById('loginError');
+            loginError.textContent = message;
+            loginError.style.display = 'block';
+            
+            // 3秒后自动隐藏错误信息
+            setTimeout(() => {
+                loginError.style.display = 'none';
+            }, 3000);
+        }
+
+        // 监听回车键登录
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('authKey').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    login();
+                }
+            });
+        });
+
+        // 修改fetchAPI函数，添加认证头
+        async function fetchAPI(url, options = {}) {
+            const defaultOptions = {
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            };
+
+            if (authToken && authToken !== 'no-auth-required') {
+                defaultOptions.headers['Authorization'] = `Bearer ${authToken}`;
+            }
+
+            const finalOptions = {
+                ...defaultOptions,
+                ...options,
+                headers: {
+                    ...defaultOptions.headers,
+                    ...(options.headers || {}),
+                },
+            };
+
+            return fetch(url, finalOptions);
+        }
+
+        // 修改loadStats函数使用fetchAPI
+        async function loadStats() {
+            try {
+                const response = await fetchAPI('/api/stats');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const stats = result.data;
+                    document.getElementById('totalKeys').textContent = stats.total_keys_count;
+                    document.getElementById('validKeys').textContent = stats.valid_keys_count;
+                    document.getElementById('rateLimitedKeys').textContent = stats.rate_limited_keys_count;
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        // 修改loadKeys函数使用fetchAPI
+        async function loadKeys() {
+            const keyType = document.getElementById('keyType').value;
+            const search = document.getElementById('search').value;
+            const repository = document.getElementById('repository').value;
+            const pageSize = document.getElementById('pageSize').value;
+            
+            const params = new URLSearchParams({
+                page: currentPage,
+                page_size: pageSize,
+                key_type: keyType,
+                search: search,
+                repository: repository
+            });
+            
+            const keysContent = document.getElementById('keysContent');
+            keysContent.innerHTML = '<div class="loading">正在加载密钥数据...</div>';
+            
+            try {
+                const response = await fetchAPI(`/api/keys?${params}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    displayKeys(result.data);
+                } else {
+                    keysContent.innerHTML = `<div class="error">加载失败: ${result.message}</div>`;
+                }
+            } catch (error) {
+                keysContent.innerHTML = `<div class="error">网络错误: ${error.message}</div>`;
+            }
+        }
+
+        // 添加退出登录功能
+        function logout() {
+            authToken = null;
+            showLoginForm();
+            document.getElementById('authKey').value = '';
+        }
     </script>
 </body>
 </html>
