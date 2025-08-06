@@ -26,11 +26,16 @@ type GroupsResponse struct {
 	Data    []GroupInfo `json:"data"`
 }
 
+// AddKeysResponseData GPT Load Add Keys API响应数据
+type AddKeysResponseData struct {
+	SuccessCount int `json:"success_count"`
+}
+
 // AddKeysResponse GPT Load Add Keys API响应
 type AddKeysResponse struct {
-	Code    string      `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data"`
+	Code    int                 `json:"code"`
+	Message string              `json:"message"`
+	Data    AddKeysResponseData `json:"data"`
 }
 
 // SyncUtils 同步工具
@@ -368,9 +373,9 @@ func (su *SyncUtils) syncToGPTLoad() error {
 		wg.Add(1)
 		go func(g string) {
 			defer wg.Done()
-			
+
 			logger.GetLogger().Infof("📝 Processing group: %s", g)
-			
+
 			// 1. 获取group ID
 			groupID, err := su.getGPTLoadGroupID(g)
 			if err != nil {
@@ -378,79 +383,90 @@ func (su *SyncUtils) syncToGPTLoad() error {
 				failedGroupsChan <- g
 				return
 			}
-			
-			// 2. 发送keys到指定group
-			addKeysURL := su.config.GPTLoadURL + "/api/keys/add-async"
-			keysText := strings.Join(su.gptLoadQueue, ",")
-			
-			data := map[string]interface{}{
-				"group_id":   groupID,
-				"keys_text":  keysText,
-			}
-			
-			jsonData, err := json.Marshal(data)
-			if err != nil {
-				logger.GetLogger().Errorf("❌ Failed to marshal GPT Load data for group '%s': %v", g, err)
-				failedGroupsChan <- g
-				return
-			}
-			
+
+			// 2. 分块发送keys到指定group
+			addKeysURL := su.config.GPTLoadURL + "/api/keys/add"
+			keysToSync := su.gptLoadQueue
+			chunkSize := 500
+			totalAdded := 0
+			failedChunks := 0
+
 			client := &http.Client{
 				Timeout: 60 * time.Second,
 			}
-			
-			req, err := http.NewRequest("POST", addKeysURL, bytes.NewBuffer(jsonData))
-			if err != nil {
-				logger.GetLogger().Errorf("❌ Failed to create request for group '%s': %v", g, err)
-				failedGroupsChan <- g
-				return
+
+			for i := 0; i < len(keysToSync); i += chunkSize {
+				end := i + chunkSize
+				if end > len(keysToSync) {
+					end = len(keysToSync)
+				}
+				chunk := keysToSync[i:end]
+
+				logger.GetLogger().Infof("   - Sending %d keys to group '%s' (chunk %d/%d)", len(chunk), g, i/chunkSize+1, (len(keysToSync)+chunkSize-1)/chunkSize)
+
+				data := map[string]interface{}{
+					"group_id": groupID,
+					"keys":     chunk,
+				}
+
+				jsonData, err := json.Marshal(data)
+				if err != nil {
+					logger.GetLogger().Errorf("   ❌ Failed to marshal GPT Load data for group '%s': %v", g, err)
+					failedChunks++
+					continue
+				}
+
+				req, err := http.NewRequest("POST", addKeysURL, bytes.NewBuffer(jsonData))
+				if err != nil {
+					logger.GetLogger().Errorf("   ❌ Failed to create request for group '%s': %v", g, err)
+					failedChunks++
+					continue
+				}
+
+				req.Header.Set("Authorization", "Bearer "+su.config.GPTLoadAuth)
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("User-Agent", "HajimiKing/1.0")
+
+				resp, err := client.Do(req)
+				if err != nil {
+					logger.GetLogger().Errorf("   ❌ Failed to send request to GPT Load for group '%s': %v", g, err)
+					failedChunks++
+					continue
+				}
+
+				// 使用匿名函数处理响应，以便安全地关闭Body
+				func() {
+					defer resp.Body.Close()
+
+					if resp.StatusCode != 200 {
+						logger.GetLogger().Errorf("   ❌ GPT Load returned status code %d for group '%s'", resp.StatusCode, g)
+						failedChunks++
+						return
+					}
+
+					var addResp AddKeysResponse
+					if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
+						logger.GetLogger().Errorf("   ❌ Failed to decode add keys response for group '%s': %v", g, err)
+						failedChunks++
+						return
+					}
+
+					if addResp.Code != 0 {
+						logger.GetLogger().Errorf("   ❌ Add keys API returned error for group '%s': %s", g, addResp.Message)
+						failedChunks++
+						return
+					}
+
+					totalAdded += addResp.Data.SuccessCount
+					logger.GetLogger().Infof("   ✅ Successfully added %d keys to group '%s'", addResp.Data.SuccessCount, g)
+				}()
 			}
-			
-			// 设置认证头
-			req.Header.Set("Authorization", "Bearer "+su.config.GPTLoadAuth)
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("User-Agent", "HajimiKing/1.0")
-			
-			resp, err := client.Do(req)
-			if err != nil {
-				logger.GetLogger().Errorf("❌ Failed to send request to GPT Load for group '%s': %v", g, err)
+
+			if failedChunks > 0 {
+				logger.GetLogger().Errorf("❌ Finished processing for group '%s' with %d failed chunks.", g, failedChunks)
 				failedGroupsChan <- g
-				return
-			}
-			defer resp.Body.Close()
-			
-			if resp.StatusCode != 200 {
-				logger.GetLogger().Errorf("❌ GPT Load returned status code %d for group '%s'", resp.StatusCode, g)
-				failedGroupsChan <- g
-				return
-			}
-			
-			var addResp AddKeysResponse
-			if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
-				logger.GetLogger().Errorf("❌ Failed to decode add keys response for group '%s': %v", g, err)
-				failedGroupsChan <- g
-				return
-			}
-			
-			// 检查响应状态
-			if addResp.Code != "0" && addResp.Code != "success" {
-				logger.GetLogger().Errorf("❌ Add keys API returned error for group '%s': %s", g, addResp.Message)
-				failedGroupsChan <- g
-				return
-			}
-			
-			// 检查任务数据
-			if taskData, ok := addResp.Data.(map[string]interface{}); ok {
-				taskType := taskData["task_type"]
-				isRunning := taskData["is_running"]
-				total := taskData["total"]
-				responseGroupName := taskData["group_name"]
-				
-				logger.GetLogger().Infof("✅ Keys addition task started successfully for group '%s':", g)
-				logger.GetLogger().Infof("   Task Type: %v", taskType)
-				logger.GetLogger().Infof("   Is Running: %v", isRunning)
-				logger.GetLogger().Infof("   Total Keys: %v", total)
-				logger.GetLogger().Infof("   Group Name: %v", responseGroupName)
+			} else {
+				logger.GetLogger().Infof("✅ Finished processing for group '%s', total keys added: %d", g, totalAdded)
 			}
 		}(group)
 	}
