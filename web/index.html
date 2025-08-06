@@ -853,10 +853,12 @@
         async function copyKey(event, key) {
             event.stopPropagation(); // 阻止事件冒泡
             try {
+                // 优先使用现代的 Clipboard API
                 await navigator.clipboard.writeText(key);
                 showCopyFeedback('单个密钥已复制', 1);
             } catch (err) {
-                showCopyFeedback('复制失败', 0, true);
+                // 如果 Clipboard API 不可用或失败，使用传统方法
+                copyToClipboardFallback(key, 1);
             }
         }
 
