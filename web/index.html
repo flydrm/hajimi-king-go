@@ -330,26 +330,8 @@
             overflow: hidden; /* 新增 */
             text-overflow: ellipsis; /* 新增 */
             cursor: pointer; /* 新增 */
-            position: relative; /* 新增 */
         }
         
-        .key-value:hover::after {
-            content: attr(data-full-key); /* 新增 */
-            position: absolute; /* 新增 */
-            left: 0; /* 新增 */
-            top: 100%; /* 新增 */
-            background-color: #333; /* 新增 */
-            color: white; /* 新增 */
-            padding: 0.5rem; /* 新增 */
-            border-radius: 5px; /* 新增 */
-            z-index: 10; /* 新增 */
-            white-space: normal; /* 新增 */
-            word-break: break-all; /* 新增 */
-            min-width: 300px; /* 新增 */
-            max-width: 500px; /* 新增 */
-        }
-
-
         .key-valid {
             color: #28a745;
             font-weight: 500;
@@ -992,7 +974,7 @@
                 tableHTML += `
                     <tr>
                         <td>
-                            <div class="key-value" data-full-key="${key.key}">${key.key}</div>
+                            <div class="key-value" title="${key.key}">${key.key}</div>
                         </td>
                         <td>
                             <span class="${keyClass}">${keyType}</span>
