@@ -25,23 +25,21 @@ import (
 	"hajimi-king-go/internal/syncutils"
 )
 
-var (
-	configFile = flag.String("config", ".env", "配置文件路径")
-)
+var ()
 
 // HajimiKing 主应用结构
 type HajimiKing struct {
-	config       *config.Config
-	logger       *logger.Logger
-	githubClient *github.Client
-	fileManager  *filemanager.FileManager
-	syncUtils    *syncutils.SyncUtils
-	apiServer    *api.APIServer
-	checkpoint   *models.Checkpoint
-	skipStats    map[string]int
+	config               *config.Config
+	logger               *logger.Logger
+	githubClient         *github.Client
+	fileManager          *filemanager.FileManager
+	syncUtils            *syncutils.SyncUtils
+	apiServer            *api.APIServer
+	checkpoint           *models.Checkpoint
+	skipStats            map[string]int
 	totalKeysFound       int
 	totalRateLimitedKeys int
-	
+
 	// 性能优化：批量处理
 	keyValidationBuffer chan string
 	// 性能优化：缓存
@@ -62,15 +60,28 @@ func NewHajimiKing() *HajimiKing {
 	// 创建文件管理器
 	fileManager := filemanager.NewFileManager(cfg)
 
+	// 加载检查点
+	checkpoint, err := fileManager.LoadCheckpoint()
+	if err != nil {
+		log.Errorf("❌ Failed to load checkpoint: %v", err)
+		// 即使加载失败，也创建一个空的checkpoint继续
+		checkpoint = &models.Checkpoint{
+			WaitSendBalancer: []string{},
+			WaitSendGPTLoad:  []string{},
+			ScannedSHAs:      []string{},
+			ProcessedQueries: []string{},
+		}
+	}
+
 	// 创建同步工具
-	syncUtils := syncutils.NewSyncUtils(cfg)
+	syncUtils := syncutils.NewSyncUtils(cfg, checkpoint, fileManager)
 
 	// 创建API服务器
 	var apiServer *api.APIServer
 	if cfg.APIEnabled {
 		apiServer = api.NewAPIServer(cfg, fileManager)
 	}
-	
+
 	// 创建优化后的实例
 	hk := &HajimiKing{
 		config:       cfg,
@@ -79,7 +90,8 @@ func NewHajimiKing() *HajimiKing {
 		fileManager:  fileManager,
 		syncUtils:    syncUtils,
 		apiServer:    apiServer,
-		skipStats:    map[string]int{
+		checkpoint:   checkpoint,
+		skipStats: map[string]int{
 			"time_filter":   0,
 			"sha_duplicate": 0,
 			"age_filter":    0,
@@ -90,10 +102,10 @@ func NewHajimiKing() *HajimiKing {
 		// 预编译正则表达式
 		compiledRegex: regexp.MustCompile(`(AIzaSy[A-Za-z0-9\-_]{33})`),
 	}
-	
+
 	// 启动批量验证协程
 	go hk.keyValidationWorker()
-	
+
 	return hk
 }
 
@@ -114,16 +126,8 @@ func (hk *HajimiKing) Run() error {
 		return fmt.Errorf("file manager check failed")
 	}
 
-	// 3. 加载检查点
-	checkpoint, err := hk.fileManager.LoadCheckpoint()
-	if err != nil {
-		hk.logger.Errorf("❌ Failed to load checkpoint: %v", err)
-		return err
-	}
-	hk.checkpoint = checkpoint
-
 	// 4. 显示同步工具状态
-	if hk.syncUtils.BalancerEnabled || hk.syncUtils.GPTLoadEnabled {
+	if hk.syncUtils.IsBalancerEnabled() || hk.syncUtils.IsGPTLoadEnabled() {
 		hk.logger.Info("🔗 SyncUtils ready for async key syncing")
 	}
 
@@ -184,7 +188,7 @@ func (hk *HajimiKing) Run() error {
 	// 等待信号
 	<-sigChan
 	hk.logger.Info("🛑 接收到终止信号，正在关闭程序...")
-	
+
 	// 执行清理操作，传递实际的统计信息
 	hk.handleShutdown(hk.totalKeysFound, hk.totalRateLimitedKeys)
 
@@ -314,7 +318,7 @@ func (hk *HajimiKing) processItem(item models.GitHubSearchItem) (int, int) {
 	for _, key := range keys {
 		contextIndex := strings.Index(content, key)
 		if contextIndex != -1 {
-			snippet := content[contextIndex : min(contextIndex+45, len(content))]
+			snippet := content[contextIndex:min(contextIndex+45, len(content))]
 			if strings.Contains(snippet, "...") || strings.Contains(strings.ToUpper(snippet), "YOUR_") {
 				continue
 			}
@@ -357,11 +361,7 @@ func (hk *HajimiKing) processItem(item models.GitHubSearchItem) (int, int) {
 		}
 
 		// 添加到同步队列（不阻塞主流程）
-		if err := hk.syncUtils.AddKeysToQueue(validKeys); err != nil {
-			hk.logger.Errorf("📥 Error adding keys to sync queues: %v", err)
-		} else {
-			hk.logger.Infof("📥 Added %d key(s) to sync queues", len(validKeys))
-		}
+		hk.syncUtils.AddKeysToQueue(validKeys)
 	}
 
 	if len(rateLimitedKeys) > 0 {
@@ -380,7 +380,6 @@ func (hk *HajimiKing) extractKeysFromContent(content string) []string {
 	// 使用预编译的正则表达式
 	return hk.compiledRegex.FindAllString(content, -1)
 }
-
 
 // keyValidationWorker 密钥验证工作协程
 func (hk *HajimiKing) keyValidationWorker() {
@@ -453,7 +452,7 @@ func (hk *HajimiKing) validateGeminiKey(apiKey string) string {
 		option.WithAPIKey(apiKey),
 		option.WithEndpoint("generativelanguage.googleapis.com"),
 	}
-	
+
 	client, err := genai.NewClient(ctx, clientOpts...)
 	if err != nil {
 		return "error:" + err.Error()
@@ -498,14 +497,14 @@ func (hk *HajimiKing) resetSkipStats() {
 // handleShutdown 处理关闭
 func (hk *HajimiKing) handleShutdown(validKeys, rateLimitedKeys int) {
 	hk.logger.LogSystemShutdown(validKeys, rateLimitedKeys)
-	
+
 	// 保存最终检查点
 	hk.checkpoint.LastScanTime = time.Now().Format(time.RFC3339)
 	hk.fileManager.SaveCheckpoint(hk.checkpoint)
-	
+
 	// 停止同步服务
 	hk.syncUtils.Stop()
-	
+
 	// 停止API服务器
 	if hk.apiServer != nil {
 		hk.logger.Info("🌐 Stopping API server...")
@@ -513,7 +512,7 @@ func (hk *HajimiKing) handleShutdown(validKeys, rateLimitedKeys int) {
 			hk.logger.Errorf("❌ Error stopping API server: %v", err)
 		}
 	}
-	
+
 	// 确保程序立即退出
 	os.Exit(0)
 }
