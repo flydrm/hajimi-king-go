@@ -308,6 +308,9 @@ func (c *Client) GetFileContent(item models.GitHubSearchItem) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if resp == nil {
+		return "", fmt.Errorf("http request returned nil response and nil error")
+	}
 	defer resp.Body.Close()
 
 	logger.GetLogger().Infof("🔍 Processing file: %s", metadataURL)
