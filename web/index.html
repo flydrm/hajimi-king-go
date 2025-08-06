@@ -849,6 +849,17 @@
         // 当前页面密钥数据
         let currentKeysData = [];
 
+        // 新增：复制单个密钥
+        async function copyKey(event, key) {
+            event.stopPropagation(); // 阻止事件冒泡
+            try {
+                await navigator.clipboard.writeText(key);
+                showCopyFeedback('单个密钥已复制', 1);
+            } catch (err) {
+                showCopyFeedback('复制失败', 0, true);
+            }
+        }
+
         // 复制当前页面密钥
         async function copyCurrentPageKeys() {
             if (!currentKeysData || currentKeysData.length === 0) {
@@ -974,7 +985,7 @@
                 tableHTML += `
                     <tr>
                         <td>
-                            <div class="key-value" title="${key.key}">${key.key}</div>
+                            <div class="key-value" title="点击复制" onclick="copyKey(event, '${key.key}')">${key.key}</div>
                         </td>
                         <td>
                             <span class="${keyClass}">${keyType}</span>
