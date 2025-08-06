@@ -367,6 +367,9 @@ func (c *Client) GetFileContent(item models.GitHubSearchItem) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if downloadResp == nil {
+		return "", fmt.Errorf("download request returned nil response for %s", fileMetadata.DownloadURL)
+	}
 	defer downloadResp.Body.Close()
 
 	logger.GetLogger().Infof("⏳ checking for keys from: %s, status: %d", fileMetadata.DownloadURL, downloadResp.StatusCode)
