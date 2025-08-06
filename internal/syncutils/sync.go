@@ -379,14 +379,78 @@ func (su *SyncUtils) syncToGPTLoad() error {
 				return
 			}
 			
-			// 2. 将密钥分块
-			keysForGroup := su.gptLoadQueue
+			// 2. 发送keys到指定group
+			addKeysURL := su.config.GPTLoadURL + "/api/keys/add-async"
+			keysText := strings.Join(su.gptLoadQueue, ",")
 			
-			// 3. 循环发送分块后的密钥
-			if err := su.sendGPTLoadKeysInChunks(g, groupID, keysForGroup); err != nil {
-				logger.GetLogger().Errorf("❌ Failed to send keys for group '%s': %v", g, err)
+			data := map[string]interface{}{
+				"group_id":   groupID,
+				"keys_text":  keysText,
+			}
+			
+			jsonData, err := json.Marshal(data)
+			if err != nil {
+				logger.GetLogger().Errorf("❌ Failed to marshal GPT Load data for group '%s': %v", g, err)
 				failedGroupsChan <- g
 				return
+			}
+			
+			client := &http.Client{
+				Timeout: 60 * time.Second,
+			}
+			
+			req, err := http.NewRequest("POST", addKeysURL, bytes.NewBuffer(jsonData))
+			if err != nil {
+				logger.GetLogger().Errorf("❌ Failed to create request for group '%s': %v", g, err)
+				failedGroupsChan <- g
+				return
+			}
+			
+			// 设置认证头
+			req.Header.Set("Authorization", "Bearer "+su.config.GPTLoadAuth)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("User-Agent", "HajimiKing/1.0")
+			
+			resp, err := client.Do(req)
+			if err != nil {
+				logger.GetLogger().Errorf("❌ Failed to send request to GPT Load for group '%s': %v", g, err)
+				failedGroupsChan <- g
+				return
+			}
+			defer resp.Body.Close()
+			
+			if resp.StatusCode != 200 {
+				logger.GetLogger().Errorf("❌ GPT Load returned status code %d for group '%s'", resp.StatusCode, g)
+				failedGroupsChan <- g
+				return
+			}
+			
+			var addResp AddKeysResponse
+			if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
+				logger.GetLogger().Errorf("❌ Failed to decode add keys response for group '%s': %v", g, err)
+				failedGroupsChan <- g
+				return
+			}
+			
+			// 检查响应状态
+			if addResp.Code != "0" && addResp.Code != "success" {
+				logger.GetLogger().Errorf("❌ Add keys API returned error for group '%s': %s", g, addResp.Message)
+				failedGroupsChan <- g
+				return
+			}
+			
+			// 检查任务数据
+			if taskData, ok := addResp.Data.(map[string]interface{}); ok {
+				taskType := taskData["task_type"]
+				isRunning := taskData["is_running"]
+				total := taskData["total"]
+				responseGroupName := taskData["group_name"]
+				
+				logger.GetLogger().Infof("✅ Keys addition task started successfully for group '%s':", g)
+				logger.GetLogger().Infof("   Task Type: %v", taskType)
+				logger.GetLogger().Infof("   Is Running: %v", isRunning)
+				logger.GetLogger().Infof("   Total Keys: %v", total)
+				logger.GetLogger().Infof("   Group Name: %v", responseGroupName)
 			}
 		}(group)
 	}
@@ -410,72 +474,6 @@ func (su *SyncUtils) syncToGPTLoad() error {
 		return fmt.Errorf("failed to send keys to %d groups", len(failedGroups))
 	}
 }
-
-// sendGPTLoadKeysInChunks 将密钥分块发送
-func (su *SyncUtils) sendGPTLoadKeysInChunks(groupName string, groupID int, keys []string) error {
-	const chunkSize = 500 // 每块500个密钥
-	
-	for i := 0; i < len(keys); i += chunkSize {
-		end := i + chunkSize
-		if end > len(keys) {
-			end = len(keys)
-		}
-		
-		chunk := keys[i:end]
-		logger.GetLogger().Infof("📦 Sending chunk of %d keys to group '%s' (%d/%d)", len(chunk), groupName, i/chunkSize+1, (len(keys)+chunkSize-1)/chunkSize)
-		
-		addKeysURL := su.config.GPTLoadURL + "/api/keys/add-async"
-		keysText := strings.Join(chunk, ",")
-		
-		data := map[string]interface{}{
-			"group_id":   groupID,
-			"keys_text":  keysText,
-		}
-		
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			return fmt.Errorf("failed to marshal chunk: %w", err)
-		}
-		
-		client := &http.Client{
-			Timeout: 60 * time.Second,
-		}
-		
-		req, err := http.NewRequest("POST", addKeysURL, bytes.NewBuffer(jsonData))
-		if err != nil {
-			return fmt.Errorf("failed to create request for chunk: %w", err)
-		}
-		
-		req.Header.Set("Authorization", "Bearer "+su.config.GPTLoadAuth)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "HajimiKing/1.0")
-		
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("failed to send chunk request: %w", err)
-		}
-		defer resp.Body.Close()
-		
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("GPT Load returned status code %d for chunk", resp.StatusCode)
-		}
-		
-		var addResp AddKeysResponse
-		if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
-			return fmt.Errorf("failed to decode response for chunk: %w", err)
-		}
-		
-		if addResp.Code != "0" && addResp.Code != "success" {
-			return fmt.Errorf("add keys API returned error for chunk: %s", addResp.Message)
-		}
-		
-		logger.GetLogger().Infof("✅ Chunk sent successfully to group '%s'", groupName)
-		
-		// 每次发送后暂停一段时间
-		time.Sleep(1 * time.Second)
-	}
-	
-	return nil
 
 // GetQueueStatus 获取队列状态
 func (su *SyncUtils) GetQueueStatus() (int, int) {
