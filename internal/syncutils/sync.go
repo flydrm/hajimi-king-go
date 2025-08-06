@@ -357,109 +357,114 @@ func (su *SyncUtils) syncToGPTLoad() error {
 		groups[i] = strings.TrimSpace(group)
 	}
 
-	// 为每个组发送密钥
-	allSuccess := true
-	failedGroups := []string{}
-	
+	// 为每个组并发发送密钥
+	var wg sync.WaitGroup
+	failedGroupsChan := make(chan string, len(groups))
+
 	for _, group := range groups {
 		if group == "" {
 			continue
 		}
-		
-		logger.GetLogger().Infof("📝 Processing group: %s", group)
-		
-		// 1. 获取group ID
-		groupID, err := su.getGPTLoadGroupID(group)
-		if err != nil {
-			logger.GetLogger().Errorf("❌ Failed to get group ID for '%s': %v", group, err)
-			failedGroups = append(failedGroups, group)
-			allSuccess = false
-			continue
-		}
-		
-		// 2. 发送keys到指定group
-		addKeysURL := su.config.GPTLoadURL + "/api/keys/add-async"
-		keysText := strings.Join(su.gptLoadQueue, ",")
-		
-		data := map[string]interface{}{
-			"group_id":   groupID,
-			"keys_text":  keysText,
-		}
-		
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			logger.GetLogger().Errorf("❌ Failed to marshal GPT Load data: %v", err)
-			failedGroups = append(failedGroups, group)
-			allSuccess = false
-			continue
-		}
-		
-		client := &http.Client{
-			Timeout: 60 * time.Second,
-		}
-		
-		req, err := http.NewRequest("POST", addKeysURL, bytes.NewBuffer(jsonData))
-		if err != nil {
-			logger.GetLogger().Errorf("❌ Failed to create request: %v", err)
-			failedGroups = append(failedGroups, group)
-			allSuccess = false
-			continue
-		}
-		
-		// 设置认证头
-		req.Header.Set("Authorization", "Bearer "+su.config.GPTLoadAuth)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "HajimiKing/1.0")
-		
-		resp, err := client.Do(req)
-		if err != nil {
-			logger.GetLogger().Errorf("❌ Failed to send request to GPT Load: %v", err)
-			failedGroups = append(failedGroups, group)
-			allSuccess = false
-			continue
-		}
-		defer resp.Body.Close()
-		
-		if resp.StatusCode != 200 {
-			logger.GetLogger().Errorf("❌ GPT Load returned status code: %d", resp.StatusCode)
-			failedGroups = append(failedGroups, group)
-			allSuccess = false
-			continue
-		}
-		
-		var addResp AddKeysResponse
-		if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
-			logger.GetLogger().Errorf("❌ Failed to decode add keys response: %v", err)
-			failedGroups = append(failedGroups, group)
-			allSuccess = false
-			continue
-		}
-		
-		// 检查响应状态
-		if addResp.Code != "0" && addResp.Code != "success" {
-			logger.GetLogger().Errorf("❌ Add keys API returned error: %s", addResp.Message)
-			failedGroups = append(failedGroups, group)
-			allSuccess = false
-			continue
-		}
-		
-		// 检查任务数据
-		if taskData, ok := addResp.Data.(map[string]interface{}); ok {
-			taskType := taskData["task_type"]
-			isRunning := taskData["is_running"]
-			total := taskData["total"]
-			responseGroupName := taskData["group_name"]
+		wg.Add(1)
+		go func(g string) {
+			defer wg.Done()
 			
-			logger.GetLogger().Infof("✅ Keys addition task started successfully for group '%s':", group)
-			logger.GetLogger().Infof("   Task Type: %v", taskType)
-			logger.GetLogger().Infof("   Is Running: %v", isRunning)
-			logger.GetLogger().Infof("   Total Keys: %v", total)
-			logger.GetLogger().Infof("   Group Name: %v", responseGroupName)
-		}
+			logger.GetLogger().Infof("📝 Processing group: %s", g)
+			
+			// 1. 获取group ID
+			groupID, err := su.getGPTLoadGroupID(g)
+			if err != nil {
+				logger.GetLogger().Errorf("❌ Failed to get group ID for '%s': %v", g, err)
+				failedGroupsChan <- g
+				return
+			}
+			
+			// 2. 发送keys到指定group
+			addKeysURL := su.config.GPTLoadURL + "/api/keys/add-async"
+			keysText := strings.Join(su.gptLoadQueue, ",")
+			
+			data := map[string]interface{}{
+				"group_id":   groupID,
+				"keys_text":  keysText,
+			}
+			
+			jsonData, err := json.Marshal(data)
+			if err != nil {
+				logger.GetLogger().Errorf("❌ Failed to marshal GPT Load data for group '%s': %v", g, err)
+				failedGroupsChan <- g
+				return
+			}
+			
+			client := &http.Client{
+				Timeout: 60 * time.Second,
+			}
+			
+			req, err := http.NewRequest("POST", addKeysURL, bytes.NewBuffer(jsonData))
+			if err != nil {
+				logger.GetLogger().Errorf("❌ Failed to create request for group '%s': %v", g, err)
+				failedGroupsChan <- g
+				return
+			}
+			
+			// 设置认证头
+			req.Header.Set("Authorization", "Bearer "+su.config.GPTLoadAuth)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("User-Agent", "HajimiKing/1.0")
+			
+			resp, err := client.Do(req)
+			if err != nil {
+				logger.GetLogger().Errorf("❌ Failed to send request to GPT Load for group '%s': %v", g, err)
+				failedGroupsChan <- g
+				return
+			}
+			defer resp.Body.Close()
+			
+			if resp.StatusCode != 200 {
+				logger.GetLogger().Errorf("❌ GPT Load returned status code %d for group '%s'", resp.StatusCode, g)
+				failedGroupsChan <- g
+				return
+			}
+			
+			var addResp AddKeysResponse
+			if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
+				logger.GetLogger().Errorf("❌ Failed to decode add keys response for group '%s': %v", g, err)
+				failedGroupsChan <- g
+				return
+			}
+			
+			// 检查响应状态
+			if addResp.Code != "0" && addResp.Code != "success" {
+				logger.GetLogger().Errorf("❌ Add keys API returned error for group '%s': %s", g, addResp.Message)
+				failedGroupsChan <- g
+				return
+			}
+			
+			// 检查任务数据
+			if taskData, ok := addResp.Data.(map[string]interface{}); ok {
+				taskType := taskData["task_type"]
+				isRunning := taskData["is_running"]
+				total := taskData["total"]
+				responseGroupName := taskData["group_name"]
+				
+				logger.GetLogger().Infof("✅ Keys addition task started successfully for group '%s':", g)
+				logger.GetLogger().Infof("   Task Type: %v", taskType)
+				logger.GetLogger().Infof("   Is Running: %v", isRunning)
+				logger.GetLogger().Infof("   Total Keys: %v", total)
+				logger.GetLogger().Infof("   Group Name: %v", responseGroupName)
+			}
+		}(group)
+	}
+
+	wg.Wait()
+	close(failedGroupsChan)
+
+	var failedGroups []string
+	for g := range failedGroupsChan {
+		failedGroups = append(failedGroups, g)
 	}
 	
 	// 根据结果返回状态
-	if allSuccess {
+	if len(failedGroups) == 0 {
 		logger.GetLogger().Infof("✅ Successfully sent keys to all %d group(s)", len(groups))
 		// 清空队列
 		su.gptLoadQueue = []string{}
