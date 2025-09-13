@@ -1,68 +1,200 @@
-# ========== 核心高概率查询 ==========
-("google-generativeai" OR "@google/generative-ai") "AIzaSy" pushed:>=2025-07-01
-filename:.env* ("GEMINI" OR "GOOGLE_GEMINI" OR "AIzaSy") pushed:>=2025-07-01
-("genai.configure" OR "GoogleGenerativeAI" OR "GenerativeModel") ("api_key" OR "apiKey") pushed:>=2025-07-01
-"AIzaSy" -example -tutorial -test -demo -sample -YOUR_API_KEY pushed:>=2025-07-01
+# ========== 直接密钥搜索（最基础但最全面） ==========
+"AIzaSy"
+"AIzaSy" NOT "YOUR_API_KEY"
+"AIzaSyCH" OR "AIzaSyCI" OR "AIzaSyCJ" OR "AIzaSyCK"
+"AIzaSyD" OR "AIzaSyE" OR "AIzaSyF" OR "AIzaSyG"
 
-# ========== 配置文件查询 ==========
-(filename:.env.production OR filename:.env.prod OR filename:production.env) ("AIzaSy" OR "gemini") pushed:>=2025-07-01
-(path:k8s OR path:kubernetes OR path:helm) "AIzaSy" pushed:>=2025-07-01
-(path:.github/workflows OR path:.gitlab-ci) ("secrets." OR "env:") "AIzaSy" pushed:>=2025-07-01
-(extension:env OR extension:json OR extension:yaml OR extension:toml) "AIzaSy" pushed:>=2025-07-01
-filename:config* "AIzaSy" pushed:>=2025-07-01
-filename:.* "AIzaSy" pushed:>=2025-07-01
+# ========== SDK和包管理器特征 ==========
+("google-generativeai" OR "@google/generative-ai") ("AIzaSy" OR "api_key" OR "apiKey")
+"pip install google-generativeai" OR "npm install @google/generative-ai"
+("import google.generativeai" OR "require('@google/generative-ai')" OR "from google import generativeai")
+("generativeai" OR "genai") AND ("configure" OR "init" OR "setup")
 
-# ========== 环境变量和API特征 ==========
-("GEMINI" OR "GOOGLE_GEMINI" OR "GENAI" OR "GEM_AI") ("KEY" OR "TOKEN" OR "SECRET" OR "API") pushed:>=2025-07-01
-("generativelanguage.googleapis.com" OR "/v1/models/gemini" OR "/v1beta/") pushed:>=2025-07-01
-("gemini-pro" OR "gemini-1.5-pro" OR "gemini-1.5-flash") ("key" OR "api") pushed:>=2025-07-01
-("Invalid API key" OR "API key not valid" OR "authentication failed") "AIzaSy" pushed:>=2025-07-01
+# ========== 所有可能的环境文件 ==========
+filename:.env "AIzaSy"
+filename:.env.local "AIzaSy"
+filename:.env.development "AIzaSy"
+filename:.env.production "AIzaSy"
+filename:.env.staging "AIzaSy"
+filename:.env.example "AIzaSy"
+filename:*.env "gemini"
+path:config ("AIzaSy" OR "gemini")
+path:settings ("AIzaSy" OR "gemini")
 
-# ========== 语言特定查询 ==========
-"AIzaSy" (language:Python OR language:JavaScript OR language:TypeScript OR language:Java) pushed:>=2025-07-01
-language:Python ("gemini" OR "AIzaSy") pushed:>=2025-07-01
-language:JavaScript ("gemini" OR "AIzaSy") pushed:>=2025-07-01
-(extension:py OR extension:js OR extension:ts OR extension:java OR extension:go OR extension:rb) "AIzaSy" pushed:>=2025-07-01
-(extension:sh OR extension:bash OR extension:zsh) "AIzaSy" pushed:>=2025-07-01
+# ========== 配置文件全类型 ==========
+extension:json ("AIzaSy" OR "gemini_api_key" OR "google_gemini")
+extension:yaml ("AIzaSy" OR "gemini" OR "google_ai")
+extension:yml ("AIzaSy" OR "gemini" OR "google_ai")
+extension:toml ("AIzaSy" OR "gemini" OR "google_ai")
+extension:ini ("AIzaSy" OR "gemini" OR "google_ai")
+extension:cfg ("AIzaSy" OR "gemini" OR "google_ai")
+extension:conf ("AIzaSy" OR "gemini" OR "google_ai")
+extension:properties ("AIzaSy" OR "gemini" OR "google_ai")
+extension:xml ("AIzaSy" OR "gemini" OR "google_ai")
 
-# ========== 全覆盖基础查询 ==========
-"AIzaSy" pushed:>=2025-07-01
-"AIzaSy" created:<2025-07-01 pushed:>=2025-07-01
-"AIzaSy" created:>=2025-07-01
-"AIzaSy" pushed:>=2025-10-25
-"AIzaSy" fork:true pushed:>=2025-07-01
-"AIzaSy" is:public pushed:>=2025-07-01
-"AIzaSy" archived:true pushed:>=2025-07-01
+# ========== 环境变量命名模式 ==========
+("GEMINI_API_KEY" OR "GEMINI_KEY" OR "GOOGLE_GEMINI_KEY" OR "GOOGLE_GEMINI_API_KEY")
+("GOOGLE_AI_KEY" OR "GOOGLE_AI_API_KEY" OR "GENAI_KEY" OR "GENAI_API_KEY")
+("GEM_API_KEY" OR "GEM_KEY" OR "GENERATIVE_AI_KEY" OR "GENERATIVE_KEY")
+("GOOGLE_API_KEY" OR "GCLOUD_API_KEY") AND ("gemini" OR "generative")
+("process.env" OR "os.environ" OR "os.getenv" OR "ENV[") AND "AIzaSy"
 
-# ========== 组织和主题查询 ==========
-org:* "AIzaSy" pushed:>=2025-07-01
-(topic:ai OR topic:machine-learning OR topic:llm OR topic:generative-ai) "AIzaSy" pushed:>=2025-07-01
-(topic:education OR topic:tutorial OR topic:course) "gemini" "api" pushed:>=2025-07-01
-(topic:chatbot OR topic:assistant OR topic:conversational-ai) "AIzaSy" pushed:>=2025-07-01
-"AIzaSy" NOT topic:* pushed:>=2025-07-01
+# ========== API特征和端点 ==========
+"generativelanguage.googleapis.com"
+"https://generativelanguage.googleapis.com/v1"
+"https://generativelanguage.googleapis.com/v1beta"
+"/v1/models/gemini" OR "/v1beta/models/gemini"
+"models/gemini-pro" OR "models/gemini-1.5-pro" OR "models/gemini-1.5-flash"
+("gemini-pro" OR "gemini-1.5-pro" OR "gemini-1.5-flash" OR "gemini-ultra") AND ("key" OR "api")
 
-# ========== 非代码资源查询 ==========
-is:issue "AIzaSy" created:>=2025-07-01
-is:pr "AIzaSy" created:>=2025-07-01
-"AIzaSy" in:wiki pushed:>=2025-07-01
-filename:README "AIzaSy" pushed:>=2025-07-01
-is:issue "leaked" "gemini" "key" created:>=2025-07-01
-"gemini" in:commit pushed:>=2025-07-01
-is:pr "AIzaSy" merged:>=2025-07-01
+# ========== 编程语言特定模式 ==========
+# Python
+language:Python ("genai.configure" OR "google.generativeai" OR "GenerativeModel") 
+language:Python "AIzaSy"
+extension:py ("gemini" AND ("api_key" OR "apikey" OR "api-key"))
+"genai.configure(api_key="
 
-# ========== 代码模式查询 ==========
-("import" OR "require" OR "from") AND ("google-generativeai" OR "@google/generative-ai") pushed:>=2025-07-01
-("=" OR ":" OR "export") AND "AIzaSy" AND ("process.env" OR "os.environ" OR "ENV") pushed:>=2025-07-01
-("API_KEY" OR "APIKEY") "AIzaSy" size:<1000 pushed:>=2025-07-01
+# JavaScript/TypeScript
+language:JavaScript "AIzaSy"
+language:TypeScript "AIzaSy"
+extension:js ("GoogleGenerativeAI" OR "@google/generative-ai")
+extension:ts ("GoogleGenerativeAI" OR "@google/generative-ai")
+"new GoogleGenerativeAI"
 
-# ========== 精简去重查询集（如果API限制，优先使用这10个） ==========
-"AIzaSy" pushed:>=2025-07-01
-"AIzaSy" created:<2025-07-01 pushed:>=2025-07-01
-("google-generativeai" OR "@google/generative-ai") pushed:>=2025-07-01
-filename:.env* pushed:>=2025-07-01
-(extension:json OR extension:yaml OR extension:toml) "AIzaSy" pushed:>=2025-07-01
-("genai.configure" OR "GoogleGenerativeAI") pushed:>=2025-07-01
-"generativelanguage.googleapis.com" pushed:>=2025-07-01
-(is:issue OR is:pr) "AIzaSy" created:>=2025-07-01
-path:.github/workflows "AIzaSy" pushed:>=2025-07-01
-"AIzaSy" fork:true pushed:>=2025-07-01
+# Java
+language:Java ("com.google.generativeai" OR "GoogleGenerativeAI")
+language:Java "AIzaSy"
+extension:java "gemini"
+
+# Go
+language:Go ("google.golang.org/genai" OR "generativeai")
+language:Go "AIzaSy"
+
+# 其他语言
+language:Ruby "AIzaSy"
+language:PHP "AIzaSy"
+language:C# "AIzaSy"
+language:Swift "AIzaSy"
+language:Kotlin "AIzaSy"
+
+# ========== 特殊文件和路径 ==========
+# CI/CD配置
+path:.github/workflows ("AIzaSy" OR "GEMINI" OR "secrets.")
+path:.gitlab-ci ("AIzaSy" OR "GEMINI")
+path:jenkins ("AIzaSy" OR "GEMINI")
+path:.circleci ("AIzaSy" OR "GEMINI")
+path:.travis ("AIzaSy" OR "GEMINI")
+
+# 容器和部署
+path:docker ("AIzaSy" OR "GEMINI")
+path:k8s ("AIzaSy" OR "GEMINI")
+path:kubernetes ("AIzaSy" OR "GEMINI")
+path:helm ("AIzaSy" OR "GEMINI")
+path:terraform ("AIzaSy" OR "GEMINI")
+filename:Dockerfile ("AIzaSy" OR "GEMINI")
+filename:docker-compose ("AIzaSy" OR "GEMINI")
+
+# 云平台配置
+path:aws ("AIzaSy" OR "GEMINI")
+path:gcp ("AIzaSy" OR "GEMINI")
+path:azure ("AIzaSy" OR "GEMINI")
+path:vercel ("AIzaSy" OR "GEMINI")
+path:netlify ("AIzaSy" OR "GEMINI")
+
+# ========== 项目类型和主题 ==========
+topic:ai "AIzaSy"
+topic:machine-learning "AIzaSy"
+topic:llm "AIzaSy"
+topic:generative-ai "AIzaSy"
+topic:chatbot "AIzaSy"
+topic:assistant "AIzaSy"
+topic:langchain "AIzaSy"
+topic:openai ("AIzaSy" OR "gemini")
+topic:artificial-intelligence "AIzaSy"
+topic:deep-learning "AIzaSy"
+
+# ========== 特殊搜索（包括非代码） ==========
+# Issues和PR
+is:issue ("AIzaSy" OR "gemini api key" OR "leaked")
+is:pr ("AIzaSy" OR "gemini" OR "api key")
+is:issue "gemini" "exposed"
+is:pr "remove" "api key"
+
+# 其他位置
+in:readme "AIzaSy"
+in:wiki "AIzaSy"
+in:description "AIzaSy"
+filename:README ("AIzaSy" OR "gemini")
+filename:CONTRIBUTING "AIzaSy"
+filename:CHANGELOG "AIzaSy"
+
+# ========== 错误和日志模式 ==========
+("error" OR "exception" OR "traceback") AND "AIzaSy"
+("401" OR "403" OR "unauthorized") AND ("gemini" OR "AIzaSy")
+"Invalid API key" "AIzaSy"
+"API key not valid" "gemini"
+filename:*.log "AIzaSy"
+extension:log "AIzaSy"
+
+# ========== 测试和示例代码 ==========
+path:test ("AIzaSy" OR "gemini")
+path:tests ("AIzaSy" OR "gemini")
+path:examples ("AIzaSy" OR "gemini")
+path:demo ("AIzaSy" OR "gemini")
+path:sample ("AIzaSy" OR "gemini")
+filename:*test* "AIzaSy"
+filename:*spec* "AIzaSy"
+
+# ========== 项目元数据 ==========
+filename:package.json ("AIzaSy" OR "gemini")
+filename:requirements.txt "google-generativeai"
+filename:pom.xml "google-generativeai"
+filename:build.gradle "google-generativeai"
+filename:Gemfile "google-generativeai"
+filename:go.mod "google.golang.org/genai"
+filename:Cargo.toml "google-generativeai"
+
+# ========== 组织和用户类型 ==========
+org:* "AIzaSy"
+user:* "AIzaSy"
+is:public "AIzaSy"
+is:private "AIzaSy"
+fork:true "AIzaSy"
+fork:false "AIzaSy"
+archived:true "AIzaSy"
+archived:false "AIzaSy"
+mirror:true "AIzaSy"
+
+# ========== 文件大小和特征 ==========
+"AIzaSy" size:<100
+"AIzaSy" size:100..1000
+"AIzaSy" size:>1000
+filename:secrets* "AIzaSy"
+filename:credentials* "AIzaSy"
+filename:*.secret "gemini"
+filename:*.key "gemini"
+
+# ========== 代码注释和文档 ==========
+("TODO" OR "FIXME" OR "NOTE") AND "AIzaSy"
+("comment" OR "//" OR "/*" OR "#") AND "AIzaSy"
+language:Markdown "AIzaSy"
+extension:md "AIzaSy"
+extension:rst "AIzaSy"
+extension:txt "AIzaSy"
+
+# ========== 精简核心查询集（优先级最高的15个） ==========
+"AIzaSy"
+("google-generativeai" OR "@google/generative-ai")
+filename:.env* ("AIzaSy" OR "GEMINI")
+("GEMINI_API_KEY" OR "GEMINI_KEY" OR "GOOGLE_GEMINI_KEY")
+"generativelanguage.googleapis.com"
+("genai.configure" OR "GoogleGenerativeAI")
+(extension:json OR extension:yaml OR extension:yml) "AIzaSy"
+path:.github/workflows "AIzaSy"
+(is:issue OR is:pr) "AIzaSy"
+language:Python "AIzaSy"
+language:JavaScript "AIzaSy"
+("gemini-pro" OR "gemini-1.5-pro" OR "gemini-1.5-flash")
+topic:ai "AIzaSy"
+path:config "AIzaSy"
+"AIzaSy" NOT "YOUR_API_KEY"
