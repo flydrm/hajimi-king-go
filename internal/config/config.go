@@ -20,10 +20,10 @@ type Config struct {
 	QueriesPath    string `json:"queries_path"`
 	CheckpointPath string `json:"checkpoint_path"`
 	
-	// API configuration
-	GeminiAPIKey     string `json:"gemini_api_key"`
-	OpenRouterAPIKey string `json:"openrouter_api_key"`
-	SiliconFlowAPIKey string `json:"siliconflow_api_key"`
+	// API configuration (deprecated - now using discovered keys for validation)
+	// GeminiAPIKey     string `json:"gemini_api_key"`
+	// OpenRouterAPIKey string `json:"openrouter_api_key"`
+	// SiliconFlowAPIKey string `json:"siliconflow_api_key"`
 	
 	// File prefixes
 	ValidKeyPrefix     string `json:"valid_key_prefix"`
@@ -99,10 +99,10 @@ func LoadConfig() *Config {
 		QueriesPath:    getEnvWithDefault("QUERIES_PATH", "./queries.txt"),
 		CheckpointPath: getEnvWithDefault("CHECKPOINT_PATH", "./checkpoint.json"),
 		
-		// API configuration
-		GeminiAPIKey:     getEnvWithDefault("GEMINI_API_KEY", ""),
-		OpenRouterAPIKey: getEnvWithDefault("OPENROUTER_API_KEY", ""),
-		SiliconFlowAPIKey: getEnvWithDefault("SILICONFLOW_API_KEY", ""),
+		// API configuration (deprecated - now using discovered keys for validation)
+		// GeminiAPIKey:     getEnvWithDefault("GEMINI_API_KEY", ""),
+		// OpenRouterAPIKey: getEnvWithDefault("OPENROUTER_API_KEY", ""),
+		// SiliconFlowAPIKey: getEnvWithDefault("SILICONFLOW_API_KEY", ""),
 		
 		// File prefixes
 		ValidKeyPrefix:     getEnvWithDefault("VALID_KEY_PREFIX", "keys_valid"),

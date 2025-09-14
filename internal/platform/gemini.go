@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/generative-ai-go/genai"
@@ -79,7 +80,7 @@ func (gp *GeminiPlatform) GetRegexPatterns() []*RegexPattern {
 	}
 }
 
-// ValidateKey validates a Gemini API key
+// ValidateKey validates a Gemini API key using the discovered key itself
 func (gp *GeminiPlatform) ValidateKey(key string) (*ValidationResult, error) {
 	result := &ValidationResult{
 		Key:        key,
@@ -94,23 +95,63 @@ func (gp *GeminiPlatform) ValidateKey(key string) (*ValidationResult, error) {
 		return result, nil
 	}
 
-	// API validation
+	// API validation using the discovered key
 	ctx, cancel := context.WithTimeout(context.Background(), gp.config.Timeout)
 	defer cancel()
 
-	// Try to create a model to validate the key
-	model := gp.client.GenerativeModel("gemini-pro")
-	
-	// Test with a simple request
-	_, err := model.GenerateContent(ctx, genai.Text("test"))
+	// Create client with the discovered key
+	clientOpts := []option.ClientOption{
+		option.WithAPIKey(key),
+		option.WithEndpoint("generativelanguage.googleapis.com"),
+	}
+
+	client, err := genai.NewClient(ctx, clientOpts...)
 	if err != nil {
 		result.Valid = false
-		result.Error = err
+		result.Error = fmt.Errorf("failed to create client: %w", err)
 		result.Response = err.Error()
 		return result, nil
 	}
+	defer client.Close()
 
-	result.Valid = true
+	// Test with a simple request
+	model := client.GenerativeModel("gemini-pro")
+	resp, err := model.GenerateContent(ctx, genai.Text("hi"))
+	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "PermissionDenied") || strings.Contains(errStr, "Unauthenticated") {
+			result.Valid = false
+			result.Error = fmt.Errorf("not_authorized_key")
+			result.Response = "not_authorized_key"
+			return result, nil
+		}
+		if strings.Contains(errStr, "TooManyRequests") || strings.Contains(errStr, "429") || strings.Contains(strings.ToLower(errStr), "rate limit") {
+			result.Valid = false
+			result.Error = fmt.Errorf("rate_limited")
+			result.Response = "rate_limited"
+			return result, nil
+		}
+		if strings.Contains(errStr, "SERVICE_DISABLED") || strings.Contains(errStr, "API has not been used") {
+			result.Valid = false
+			result.Error = fmt.Errorf("disabled")
+			result.Response = "disabled"
+			return result, nil
+		}
+		result.Valid = false
+		result.Error = err
+		result.Response = "error:" + errStr
+		return result, nil
+	}
+
+	if resp != nil {
+		result.Valid = true
+		result.Response = "ok"
+		return result, nil
+	}
+
+	result.Valid = false
+	result.Error = fmt.Errorf("unknown_error")
+	result.Response = "unknown_error"
 	return result, nil
 }
 

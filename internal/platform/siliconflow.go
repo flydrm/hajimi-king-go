@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -87,7 +88,7 @@ func (sp *SiliconFlowPlatform) GetRegexPatterns() []*RegexPattern {
 	}
 }
 
-// ValidateKey validates a SiliconFlow API key
+// ValidateKey validates a SiliconFlow API key using the discovered key itself
 func (sp *SiliconFlowPlatform) ValidateKey(key string) (*ValidationResult, error) {
 	result := &ValidationResult{
 		Key:        key,
@@ -102,7 +103,7 @@ func (sp *SiliconFlowPlatform) ValidateKey(key string) (*ValidationResult, error
 		return result, nil
 	}
 
-	// API validation
+	// API validation using the discovered key
 	ctx, cancel := context.WithTimeout(context.Background(), sp.config.Timeout)
 	defer cancel()
 
@@ -158,13 +159,38 @@ func (sp *SiliconFlowPlatform) ValidateKey(key string) (*ValidationResult, error
 
 	// Check for API errors
 	if response.Error != nil {
+		errStr := response.Error.Message
+		if strings.Contains(errStr, "Unauthorized") || strings.Contains(errStr, "Invalid API key") {
+			result.Valid = false
+			result.Error = fmt.Errorf("not_authorized_key")
+			result.Response = "not_authorized_key"
+			return result, nil
+		}
+		if strings.Contains(errStr, "Too Many Requests") || strings.Contains(errStr, "rate limit") {
+			result.Valid = false
+			result.Error = fmt.Errorf("rate_limited")
+			result.Response = "rate_limited"
+			return result, nil
+		}
 		result.Valid = false
-		result.Error = fmt.Errorf("API error: %s", response.Error.Message)
-		result.Response = response.Error.Message
+		result.Error = fmt.Errorf("API error: %s", errStr)
+		result.Response = errStr
 		return result, nil
 	}
 
 	// Check status code
+	if resp.StatusCode == 401 {
+		result.Valid = false
+		result.Error = fmt.Errorf("not_authorized_key")
+		result.Response = "not_authorized_key"
+		return result, nil
+	}
+	if resp.StatusCode == 429 {
+		result.Valid = false
+		result.Error = fmt.Errorf("rate_limited")
+		result.Response = "rate_limited"
+		return result, nil
+	}
 	if resp.StatusCode != 200 {
 		result.Valid = false
 		result.Error = fmt.Errorf("HTTP error: %d", resp.StatusCode)
@@ -173,6 +199,7 @@ func (sp *SiliconFlowPlatform) ValidateKey(key string) (*ValidationResult, error
 	}
 
 	result.Valid = true
+	result.Response = "ok"
 	return result, nil
 }
 

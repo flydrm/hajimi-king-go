@@ -113,7 +113,7 @@ func NewOptimizedHajimiKing() (*OptimizedHajimiKing, error) {
 		cancel:          cancel,
 	}
 
-	// Initialize platforms
+	// Initialize platforms (no longer need pre-configured API keys)
 	if err := hk.initializePlatforms(); err != nil {
 		return nil, fmt.Errorf("failed to initialize platforms: %w", err)
 	}
@@ -124,53 +124,53 @@ func NewOptimizedHajimiKing() (*OptimizedHajimiKing, error) {
 	return hk, nil
 }
 
-// initializePlatforms initializes all platforms
+// initializePlatforms initializes all platforms (no longer need pre-configured API keys)
 func (hk *OptimizedHajimiKing) initializePlatforms() error {
-	// Initialize Gemini platform
-	if hk.config.GeminiAPIKey != "" {
-		geminiPlatform, err := platform.NewGeminiPlatform(hk.config.GeminiAPIKey)
-		if err != nil {
-			hk.logger.Warn("Failed to initialize Gemini platform", map[string]interface{}{
+	// Initialize Gemini platform (no API key needed for initialization)
+	geminiPlatform, err := platform.NewGeminiPlatform("")
+	if err != nil {
+		hk.logger.Warn("Failed to initialize Gemini platform", map[string]interface{}{
+			"error": err.Error(),
+		})
+	} else {
+		if err := hk.platformManager.RegisterPlatform(geminiPlatform); err != nil {
+			hk.logger.Warn("Failed to register Gemini platform", map[string]interface{}{
 				"error": err.Error(),
 			})
 		} else {
-			if err := hk.platformManager.RegisterPlatform(geminiPlatform); err != nil {
-				hk.logger.Warn("Failed to register Gemini platform", map[string]interface{}{
-					"error": err.Error(),
-				})
-			}
+			hk.logger.Info("Gemini platform registered successfully")
 		}
 	}
 
-	// Initialize OpenRouter platform
-	if hk.config.OpenRouterAPIKey != "" {
-		openrouterPlatform, err := platform.NewOpenRouterPlatform(hk.config.OpenRouterAPIKey)
-		if err != nil {
-			hk.logger.Warn("Failed to initialize OpenRouter platform", map[string]interface{}{
+	// Initialize OpenRouter platform (no API key needed for initialization)
+	openrouterPlatform, err := platform.NewOpenRouterPlatform("")
+	if err != nil {
+		hk.logger.Warn("Failed to initialize OpenRouter platform", map[string]interface{}{
+			"error": err.Error(),
+		})
+	} else {
+		if err := hk.platformManager.RegisterPlatform(openrouterPlatform); err != nil {
+			hk.logger.Warn("Failed to register OpenRouter platform", map[string]interface{}{
 				"error": err.Error(),
 			})
 		} else {
-			if err := hk.platformManager.RegisterPlatform(openrouterPlatform); err != nil {
-				hk.logger.Warn("Failed to register OpenRouter platform", map[string]interface{}{
-					"error": err.Error(),
-				})
-			}
+			hk.logger.Info("OpenRouter platform registered successfully")
 		}
 	}
 
-	// Initialize SiliconFlow platform
-	if hk.config.SiliconFlowAPIKey != "" {
-		siliconflowPlatform, err := platform.NewSiliconFlowPlatform(hk.config.SiliconFlowAPIKey)
-		if err != nil {
-			hk.logger.Warn("Failed to initialize SiliconFlow platform", map[string]interface{}{
+	// Initialize SiliconFlow platform (no API key needed for initialization)
+	siliconflowPlatform, err := platform.NewSiliconFlowPlatform("")
+	if err != nil {
+		hk.logger.Warn("Failed to initialize SiliconFlow platform", map[string]interface{}{
+			"error": err.Error(),
+		})
+	} else {
+		if err := hk.platformManager.RegisterPlatform(siliconflowPlatform); err != nil {
+			hk.logger.Warn("Failed to register SiliconFlow platform", map[string]interface{}{
 				"error": err.Error(),
 			})
 		} else {
-			if err := hk.platformManager.RegisterPlatform(siliconflowPlatform); err != nil {
-				hk.logger.Warn("Failed to register SiliconFlow platform", map[string]interface{}{
-					"error": err.Error(),
-				})
-			}
+			hk.logger.Info("SiliconFlow platform registered successfully")
 		}
 	}
 

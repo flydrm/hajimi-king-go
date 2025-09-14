@@ -12,6 +12,12 @@ Hajimi King Go v2.0 是一个高性能的多平台API密钥发现系统，支持
 - **SiliconFlow API**: 支持sk-开头的API密钥发现和验证
 - **可扩展架构**: 支持未来添加更多平台
 
+### 🔍 智能验证系统
+- **零配置验证**: 使用发现的API密钥本身进行验证，无需预先配置
+- **实时验证**: 发现密钥后立即调用对应平台API验证
+- **智能分类**: 自动区分有效、无效、限流、未授权等状态
+- **安全可靠**: 不存储无效密钥，减少安全风险
+
 ### ⚡ 高性能优化
 - **并发处理**: Worker Pool模式，支持多平台并发处理
 - **多级缓存**: L1内存缓存 + L2文件缓存 + L3Redis缓存（可选）
@@ -81,7 +87,7 @@ Hajimi King Go v2.0 是一个高性能的多平台API密钥发现系统，支持
 
 ### 2. 获取必要的API密钥
 
-#### GitHub Personal Access Token
+#### GitHub Personal Access Token（必需）
 1. 访问 [GitHub Settings > Personal Access Tokens](https://github.com/settings/tokens)
 2. 点击 "Generate new token (classic)"
 3. 选择权限：
@@ -89,23 +95,18 @@ Hajimi King Go v2.0 是一个高性能的多平台API密钥发现系统，支持
    - `repo` - 访问私有仓库（如果需要）
 4. 复制生成的token（格式：`ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）
 
-#### Google Gemini API Key（可选）
-1. 访问 [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. 登录Google账户
-3. 点击 "Create API Key"
-4. 复制生成的API密钥（格式：`AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）
+#### 其他平台API密钥（不需要预先配置）
+**重要说明**: 系统现在使用**发现的API密钥本身**进行验证，无需预先配置任何API密钥！
 
-#### OpenRouter API Key（可选）
-1. 访问 [OpenRouter Keys](https://openrouter.ai/keys)
-2. 注册/登录账户
-3. 点击 "Create Key"
-4. 复制生成的API密钥（格式：`sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）
+- **Google Gemini**: 系统会自动发现 `AIzaSy` 开头的密钥并验证
+- **OpenRouter**: 系统会自动发现 `sk-or-` 开头的密钥并验证  
+- **SiliconFlow**: 系统会自动发现 `sk-` 开头的密钥并验证
 
-#### SiliconFlow API Key（可选）
-1. 访问 [SiliconFlow Console](https://siliconflow.cn/console/api-keys)
-2. 注册/登录账户
-3. 创建新的API密钥
-4. 复制生成的API密钥（格式：`sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）
+**验证流程**:
+1. 系统在GitHub代码中发现API密钥
+2. 直接使用发现的密钥调用对应平台API
+3. 根据API响应判断密钥有效性
+4. 分类保存：有效、无效、限流、未授权等
 
 ### 3. 安装和配置
 
@@ -161,20 +162,12 @@ PLATFORM_SELECTED=gemini,openrouter
 
 #### 🔧 推荐配置
 
-**API密钥配置（用于密钥验证）**
-```bash
-# Google Gemini API密钥
-# 获取地址: https://makersuite.google.com/app/apikey
-GEMINI_API_KEY=AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+**注意**: 系统现在使用**发现的API密钥本身**进行验证，不再需要预先配置API密钥！
 
-# OpenRouter API密钥
-# 获取地址: https://openrouter.ai/keys
-OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# SiliconFlow API密钥
-# 获取地址: https://siliconflow.cn/console/api-keys
-SILICONFLOW_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+**验证方式说明**:
+- 系统发现API密钥后，会直接使用该密钥调用对应平台的API进行验证
+- 无需预先配置任何API密钥
+- 验证结果包括：有效、无效、限流、未授权等状态
 
 **性能优化配置**
 ```bash
@@ -269,7 +262,7 @@ PLATFORM_OPENROUTER_ENABLED=false
 PLATFORM_SILICONFLOW_ENABLED=false
 ```
 
-**完整配置（包含API验证）**
+**完整配置（包含所有平台）**
 ```bash
 # .env 文件内容
 # GitHub配置
@@ -284,10 +277,8 @@ PLATFORM_GEMINI_ENABLED=true
 PLATFORM_OPENROUTER_ENABLED=true
 PLATFORM_SILICONFLOW_ENABLED=true
 
-# API密钥（用于验证）
-GEMINI_API_KEY=AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-SILICONFLOW_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# 注意：不再需要预先配置API密钥！
+# 系统会使用发现的密钥直接进行验证
 
 # 性能配置
 WORKER_POOL_SIZE=8
