@@ -1,25 +1,16 @@
-# GitHub搜索查询配置文件
+# OpenRouter API密钥搜索查询配置文件
 # 每行一个查询语句，支持GitHub搜索语法
 # 以#开头的行为注释，空行会被忽略
 
-# OpenRouter API密钥搜索
+# 基础OpenRouter API密钥搜索
 "sk-or-" in:file
 "sk-or-v1-" in:file
-
-# SiliconFlow API密钥搜索
-"sk-" in:file AND NOT "sk-or-"
 
 # 环境文件中的OpenRouter密钥
 filename:*.env "OPENROUTER_API_KEY"
 filename:*.env "openrouter"
 path:config "OPENROUTER_API_KEY"
 path:settings "OPENROUTER_API_KEY"
-
-# 环境文件中的SiliconFlow密钥
-filename:*.env "SILICONFLOW_API_KEY"
-filename:*.env "siliconflow"
-path:config "SILICONFLOW_API_KEY"
-path:settings "SILICONFLOW_API_KEY"
 
 # 配置文件中的OpenRouter密钥
 extension:json ("OPENROUTER_API_KEY" OR "openrouter_api_key" OR "openrouter")
@@ -32,59 +23,26 @@ extension:conf ("OPENROUTER_API_KEY" OR "openrouter" OR "openrouter_api")
 extension:properties ("OPENROUTER_API_KEY" OR "openrouter" OR "openrouter_api")
 extension:xml ("OPENROUTER_API_KEY" OR "openrouter" OR "openrouter_api")
 
-# 配置文件中的SiliconFlow密钥
-extension:json ("SILICONFLOW_API_KEY" OR "siliconflow_api_key" OR "siliconflow")
-extension:yaml ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
-extension:yml ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
-extension:toml ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
-extension:ini ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
-extension:cfg ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
-extension:conf ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
-extension:properties ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
-extension:xml ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
-
 # 各种OpenRouter密钥变量名
 ("OPENROUTER_API_KEY" OR "OPENROUTER_KEY" OR "OPENROUTER_TOKEN" OR "OPENROUTER_API_TOKEN")
 
-# 各种SiliconFlow密钥变量名
-("SILICONFLOW_API_KEY" OR "SILICONFLOW_KEY" OR "SILICONFLOW_TOKEN" OR "SILICONFLOW_API_TOKEN")
-
 # 通用API密钥变量名（结合OpenRouter关键词）
 ("API_KEY" OR "API_TOKEN" OR "SECRET_KEY") AND ("openrouter" OR "open-router")
-
-# 通用API密钥变量名（结合SiliconFlow关键词）
-("API_KEY" OR "API_TOKEN" OR "SECRET_KEY") AND ("siliconflow" OR "silicon-flow")
 
 # OpenRouter相关URL和端点
 "/v1/chat/completions" AND "openrouter"
 "openrouter.ai" AND ("key" OR "api" OR "token")
 "api.openrouter.ai" AND ("key" OR "api" OR "token")
 
-# SiliconFlow相关URL和端点
-"api.siliconflow.cn" AND ("key" OR "api" OR "token")
-"siliconflow.cn" AND ("key" OR "api" OR "token")
-"/v1/chat/completions" AND "siliconflow"
-
 # 模型相关搜索
 "openai/gpt" AND ("key" OR "api" OR "token")
 "anthropic/claude" AND ("key" OR "api" OR "token")
 "meta-llama" AND ("key" OR "api" OR "token")
 
-# SiliconFlow模型相关搜索
-"deepseek-ai" AND ("key" OR "api" OR "token")
-"deepseek" AND ("key" OR "api" OR "token")
-"qwen" AND ("key" OR "api" OR "token")
-"baichuan" AND ("key" OR "api" OR "token")
-
 # Python代码中的OpenRouter使用
 extension:py ("openrouter" AND ("api_key" OR "apikey" OR "api-key"))
 extension:py "OpenRouter" AND ("key" OR "token")
 extension:py "openrouter.ai" AND ("key" OR "token")
-
-# Python代码中的SiliconFlow使用
-extension:py ("siliconflow" AND ("api_key" OR "apikey" OR "api-key"))
-extension:py "SiliconFlow" AND ("key" OR "token")
-extension:py "siliconflow.cn" AND ("key" OR "token")
 
 # JavaScript/TypeScript代码中的OpenRouter使用
 extension:js ("openrouter" AND ("api_key" OR "apikey" OR "api-key"))
@@ -201,7 +159,3 @@ language:php "openrouter" AND ("api_key" OR "apikey")
 language:ruby "openrouter" AND ("api_key" OR "apikey")
 language:swift "openrouter" AND ("api_key" OR "apikey")
 language:kotlin "openrouter" AND ("api_key" OR "apikey")
-
-# 保留Gemini搜索（向后兼容）
-AIzaSy in:file
-AizaSy in:file filename:.env
