@@ -1,8 +1,8 @@
-# GitHub搜索查询配置文件
+# OpenRouter API密钥搜索查询配置文件
 # 每行一个查询语句，支持GitHub搜索语法
 # 以#开头的行为注释，空行会被忽略
 
-# OpenRouter API密钥搜索
+# 基础OpenRouter API密钥搜索
 "sk-or-" in:file
 "sk-or-v1-" in:file
 
@@ -159,7 +159,3 @@ language:php "openrouter" AND ("api_key" OR "apikey")
 language:ruby "openrouter" AND ("api_key" OR "apikey")
 language:swift "openrouter" AND ("api_key" OR "apikey")
 language:kotlin "openrouter" AND ("api_key" OR "apikey")
-
-# 保留Gemini搜索（向后兼容）
-AIzaSy in:file
-AizaSy in:file filename:.env

@@ -2,14 +2,15 @@
 
 🎪 **Hajimi King Go** - 人人都是哈基米大王 👑  
 
-这是一个用于从GitHub搜索和验证Google Gemini API密钥的Go语言版本项目。  
-基于 [GakkiNoOne/hajimi-king](https://github.com/GakkiNoOne/hajimi-king) 项目重构，提供更好的性能和并发处理能力。
+这是一个用于从GitHub搜索和验证OpenRouter API密钥的Go语言版本项目。  
+基于 [GakkiNoOne/hajimi-king](https://github.com/GakkiNoOne/hajimi-king) 项目重构，提供更好的性能和并发处理能力。  
+支持OpenRouter和Gemini API密钥验证，默认使用OpenRouter进行验证。
 
 ⚠️ **注意**：本项目正处于beta期间，功能、结构、接口等都有可能变化，不保证稳定性，请自行承担风险。
 
 ## 🚀 核心功能
 
-1. **🔍 GitHub搜索Gemini Key** - 基于自定义查询表达式搜索GitHub代码中的API密钥
+1. **🔍 GitHub搜索OpenRouter Key** - 基于自定义查询表达式搜索GitHub代码中的OpenRouter API密钥
 2. **🌐 代理支持** - 支持多代理轮换，提高访问稳定性和成功率
 3. **📊 增量扫描** - 支持断点续传，避免重复扫描已处理的文件
 4. **🚫 智能过滤** - 自动过滤文档、示例、测试文件，专注有效代码
@@ -94,9 +95,9 @@ GITHUB_TOKENS=ghp1,ghp2,ghp3
 
 ### 🌐 代理配置
 
-强烈建议使用！GITHUB、GEMINI 访问长时间高频都会BAN IP
+强烈建议使用！GITHUB、OPENROUTER 访问长时间高频都会BAN IP
 
-如果需要使用代理访问GitHub或Gemini API，推荐使用本地WARP代理：
+如果需要使用代理访问GitHub或OpenRouter API，推荐使用本地WARP代理：
 
 > 🌐 **代理方案**：[warp-docker](https://github.com/cmj2002/warp-docker) - 本地WARP代理解决方案
 
@@ -267,7 +268,9 @@ curl "http://localhost:8080/api/keys?search=AIzaSy" \
 | `DATA_PATH` | `./data` | 数据存储目录路径 📂 |
 | `DATE_RANGE_DAYS` | `730` | 仓库年龄过滤（天数），只扫描指定天数内的仓库 📅 |
 | `QUERIES_FILE` | `queries.txt` | 搜索查询配置文件路径 🎯 |
-| `HAJIMI_CHECK_MODEL` | `gemini-2.5-flash` | 用于验证key有效的模型 🤖 |
+| `VALIDATION_PROVIDER` | `openrouter` | 验证提供商：openrouter 或 gemini 🔧 |
+| `OPENROUTER_CHECK_MODEL` | `openai/gpt-3.5-turbo` | 用于验证key有效的OpenRouter模型 🤖 |
+| `HAJIMI_CHECK_MODEL` | `gemini-2.5-flash` | 用于验证key有效的Gemini模型（已废弃） 🤖 |
 | `API_ENABLED` | `false` | 是否启用API服务器和Web界面 🌐 |
 | `API_PORT` | `8080` | API服务器端口 🔌 |
 | `API_AUTH_KEY` | 空 | API访问密钥（设置后需要登录才能访问） 🔐 |
@@ -303,7 +306,8 @@ GITHUB_TOKENS=ghp_your_token_here_1,ghp_your_token_here_2
 DATA_PATH=./data
 DATE_RANGE_DAYS=730
 QUERIES_FILE=queries.txt
-HAJIMI_CHECK_MODEL=gemini-2.5-flash
+VALIDATION_PROVIDER=openrouter
+OPENROUTER_CHECK_MODEL=openai/gpt-3.5-turbo
 API_ENABLED=true
 API_PORT=8080
 API_AUTH_KEY=your_secure_access_key_here

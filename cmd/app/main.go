@@ -22,6 +22,7 @@ import (
 	"hajimi-king-go/internal/github"
 	"hajimi-king-go/internal/logger"
 	"hajimi-king-go/internal/models"
+	"hajimi-king-go/internal/openrouter"
 	"hajimi-king-go/internal/syncutils"
 )
 
@@ -99,8 +100,8 @@ func NewHajimiKing() *HajimiKing {
 		},
 		// 初始化批量处理缓冲区
 		keyValidationBuffer: make(chan string, 100),
-		// 预编译正则表达式
-		compiledRegex: regexp.MustCompile(`(AIzaSy[A-Za-z0-9\-_]{33})`),
+		// 预编译正则表达式 - 支持OpenRouter和Gemini密钥
+		compiledRegex: regexp.MustCompile(`(sk-or-[A-Za-z0-9\-_]{48}|AIzaSy[A-Za-z0-9\-_]{33})`),
 	}
 
 	// 启动批量验证协程
@@ -340,7 +341,7 @@ func (hk *HajimiKing) processItem(item models.GitHubSearchItem) (int, int) {
 
 	// 验证每个密钥
 	for _, key := range keys {
-		validationResult := hk.validateGeminiKey(key)
+		validationResult := hk.validateAPIKey(key)
 		if validationResult == "ok" {
 			validKeys = append(validKeys, key)
 			hk.logger.Infof("✅ VALID: %s", key)
@@ -384,7 +385,7 @@ func (hk *HajimiKing) extractKeysFromContent(content string) []string {
 // keyValidationWorker 密钥验证工作协程
 func (hk *HajimiKing) keyValidationWorker() {
 	for key := range hk.keyValidationBuffer {
-		result := hk.validateGeminiKey(key)
+		result := hk.validateAPIKey(key)
 		// 处理验证结果
 		if result == "ok" {
 			hk.logger.Infof("✅ VALID: %s", key)
@@ -441,11 +442,49 @@ func (hk *HajimiKing) shouldSkipItem(item models.GitHubSearchItem) (bool, string
 	return false, ""
 }
 
-// validateGeminiKey 验证Gemini密钥
-func (hk *HajimiKing) validateGeminiKey(apiKey string) string {
+// validateAPIKey 验证API密钥（支持Gemini和OpenRouter）
+func (hk *HajimiKing) validateAPIKey(apiKey string) string {
 	// 使用更短的延迟和批量验证
 	time.Sleep(time.Duration(rand.Float64()*0.5+0.2) * time.Second)
 
+	// 根据配置选择验证提供商
+	switch hk.config.ValidationProvider {
+	case "openrouter":
+		return hk.validateOpenRouterKey(apiKey)
+	case "gemini":
+		return hk.validateGeminiKey(apiKey)
+	default:
+		// 默认使用OpenRouter
+		return hk.validateOpenRouterKey(apiKey)
+	}
+}
+
+// validateOpenRouterKey 验证OpenRouter密钥
+func (hk *HajimiKing) validateOpenRouterKey(apiKey string) string {
+	client := openrouter.NewClient(apiKey)
+	
+	// 首先尝试简单的模型列表验证
+	result, err := client.ValidateAPIKey()
+	if err != nil {
+		return "error:" + err.Error()
+	}
+	
+	// 如果模型列表验证成功，进行更彻底的聊天测试
+	if result == "ok" {
+		testResult, err := client.TestAPIKey()
+		if err != nil {
+			// 如果测试失败但模型列表验证成功，仍然认为密钥有效
+			hk.logger.Warningf("⚠️ OpenRouter test failed but models accessible: %v", err)
+			return "ok"
+		}
+		return testResult
+	}
+	
+	return result
+}
+
+// validateGeminiKey 验证Gemini密钥（保留兼容性）
+func (hk *HajimiKing) validateGeminiKey(apiKey string) string {
 	// 为每个密钥创建新的客户端，确保API密钥正确设置
 	ctx := context.Background()
 	clientOpts := []option.ClientOption{
