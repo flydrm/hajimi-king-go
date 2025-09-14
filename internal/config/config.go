@@ -22,7 +22,8 @@ type Config struct {
 	ScannedSHAsFile              string   // 已扫描文件SHA记录文件名
 	HajimiCheckModel             string   // 用于验证密钥的Gemini模型名称（已废弃，保留兼容性）
 	OpenRouterCheckModel         string   // 用于验证密钥的OpenRouter模型名称
-	ValidationProvider            string   // 验证提供商：gemini 或 openrouter
+	SiliconFlowCheckModel        string   // 用于验证密钥的SiliconFlow模型名称
+	ValidationProvider            string   // 验证提供商：gemini、openrouter 或 siliconflow
 	FilePathBlacklist            []string // 文件路径黑名单，用于过滤文档等文件
 	ValidKeyPrefix               string   // 有效密钥文件名前缀
 	RateLimitedKeyPrefix         string   // 限流密钥文件名前缀
@@ -63,6 +64,7 @@ func LoadConfig() *Config {
 		ScannedSHAsFile:              getEnvWithDefault("SCANNED_SHAS_FILE", "scanned_shas.txt"),
 		HajimiCheckModel:             getEnvWithDefault("HAJIMI_CHECK_MODEL", "gemini-2.5-flash"),
 		OpenRouterCheckModel:         getEnvWithDefault("OPENROUTER_CHECK_MODEL", "openai/gpt-3.5-turbo"),
+		SiliconFlowCheckModel:        getEnvWithDefault("SILICONFLOW_CHECK_MODEL", "deepseek-ai/deepseek-chat"),
 		ValidationProvider:            getEnvWithDefault("VALIDATION_PROVIDER", "openrouter"),
 		FilePathBlacklist:            parseStringList(os.Getenv("FILE_PATH_BLACKLIST")),
 		ValidKeyPrefix:               getEnvWithDefault("VALID_KEY_PREFIX", "keys/keys_valid_"),
@@ -137,6 +139,8 @@ func (c *Config) Check() bool {
 		log.Printf("✅ OpenRouter model: %s", c.OpenRouterCheckModel)
 	} else if c.ValidationProvider == "gemini" {
 		log.Printf("✅ Gemini model: %s", c.HajimiCheckModel)
+	} else if c.ValidationProvider == "siliconflow" {
+		log.Printf("✅ SiliconFlow model: %s", c.SiliconFlowCheckModel)
 	}
 
 	// 检查Gemini Balancer配置

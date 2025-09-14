@@ -1,0 +1,171 @@
+# SiliconFlow API密钥搜索查询配置文件
+# 每行一个查询语句，支持GitHub搜索语法
+# 以#开头的行为注释，空行会被忽略
+
+# 基础SiliconFlow API密钥搜索
+"sk-" in:file
+"sk-" NOT "sk-or-"
+
+# 环境文件中的SiliconFlow密钥
+filename:*.env "SILICONFLOW_API_KEY"
+filename:*.env "siliconflow"
+path:config "SILICONFLOW_API_KEY"
+path:settings "SILICONFLOW_API_KEY"
+
+# 配置文件中的SiliconFlow密钥
+extension:json ("SILICONFLOW_API_KEY" OR "siliconflow_api_key" OR "siliconflow")
+extension:yaml ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
+extension:yml ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
+extension:toml ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
+extension:ini ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
+extension:cfg ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
+extension:conf ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
+extension:properties ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
+extension:xml ("SILICONFLOW_API_KEY" OR "siliconflow" OR "siliconflow_api")
+
+# 各种SiliconFlow密钥变量名
+("SILICONFLOW_API_KEY" OR "SILICONFLOW_KEY" OR "SILICONFLOW_TOKEN" OR "SILICONFLOW_API_TOKEN")
+
+# 通用API密钥变量名（结合SiliconFlow关键词）
+("API_KEY" OR "API_TOKEN" OR "SECRET_KEY") AND ("siliconflow" OR "silicon-flow")
+
+# SiliconFlow相关URL和端点
+"api.siliconflow.cn" AND ("key" OR "api" OR "token")
+"siliconflow.cn" AND ("key" OR "api" OR "token")
+"/v1/chat/completions" AND "siliconflow"
+
+# 模型相关搜索
+"deepseek-ai" AND ("key" OR "api" OR "token")
+"deepseek" AND ("key" OR "api" OR "token")
+"qwen" AND ("key" OR "api" OR "token")
+"baichuan" AND ("key" OR "api" OR "token")
+
+# Python代码中的SiliconFlow使用
+extension:py ("siliconflow" AND ("api_key" OR "apikey" OR "api-key"))
+extension:py "SiliconFlow" AND ("key" OR "token")
+extension:py "siliconflow.cn" AND ("key" OR "token")
+
+# JavaScript/TypeScript代码中的SiliconFlow使用
+extension:js ("siliconflow" AND ("api_key" OR "apikey" OR "api-key"))
+extension:ts ("siliconflow" AND ("api_key" OR "apikey" OR "api-key"))
+extension:jsx ("siliconflow" AND ("api_key" OR "apikey" OR "api-key"))
+extension:tsx ("siliconflow" AND ("api_key" OR "apikey" OR "api-key"))
+
+# Java代码中的SiliconFlow使用
+extension:java "siliconflow"
+
+# 配置文件中的SiliconFlow设置
+path:.github/workflows ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:.gitlab-ci ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:jenkins ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:.circleci ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:.travis ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# Docker和容器化配置
+path:docker ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:k8s ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:kubernetes ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:helm ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:terraform ("SILICONFLOW" OR "siliconflow" OR "sk-")
+filename:Dockerfile ("SILICONFLOW" OR "siliconflow" OR "sk-")
+filename:docker-compose ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 云服务配置
+path:aws ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:gcp ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:azure ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:vercel ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:netlify ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 主题和标签搜索
+topic:openai ("SILICONFLOW" OR "siliconflow" OR "sk-")
+topic:llm ("SILICONFLOW" OR "siliconflow" OR "sk-")
+topic:ai ("SILICONFLOW" OR "siliconflow" OR "sk-")
+topic:gpt ("SILICONFLOW" OR "siliconflow" OR "sk-")
+topic:claude ("SILICONFLOW" OR "siliconflow" OR "sk-")
+topic:deepseek ("SILICONFLOW" OR "siliconflow" OR "sk-")
+topic:qwen ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 问题和PR中的SiliconFlow密钥泄露
+is:issue ("SILICONFLOW" OR "siliconflow api key" OR "leaked")
+is:pr ("SILICONFLOW" OR "siliconflow" OR "api key")
+is:issue "siliconflow" "exposed"
+
+# 错误日志中的SiliconFlow相关错误
+("401" OR "403" OR "unauthorized") AND ("siliconflow" OR "SILICONFLOW")
+"API key not valid" "siliconflow"
+"Invalid API key" "siliconflow"
+
+# 测试和示例文件
+path:test ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:tests ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:examples ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:demo ("SILICONFLOW" OR "siliconflow" OR "sk-")
+path:sample ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 包管理文件
+filename:package.json ("SILICONFLOW" OR "siliconflow")
+filename:requirements.txt "siliconflow"
+filename:pipfile "siliconflow"
+filename:poetry.lock "siliconflow"
+filename:composer.json "siliconflow"
+filename:go.mod "siliconflow"
+filename:Cargo.toml "siliconflow"
+
+# 密钥文件
+filename:*.secret "siliconflow"
+filename:*.key "siliconflow"
+filename:*.pem "siliconflow"
+filename:*.p12 "siliconflow"
+
+# 环境变量文件
+filename:.env* ("SILICONFLOW" OR "siliconflow")
+("SILICONFLOW_API_KEY" OR "SILICONFLOW_KEY" OR "SILICONFLOW_TOKEN")
+
+# 代码注释中的SiliconFlow密钥
+"//" ("SILICONFLOW" OR "siliconflow" OR "sk-")
+"#" ("SILICONFLOW" OR "siliconflow" OR "sk-")
+"/*" ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 字符串常量中的SiliconFlow密钥
+"sk-" AND ("const" OR "let" OR "var" OR "String" OR "str") AND NOT "sk-or-"
+
+# 数据库配置中的SiliconFlow密钥
+"database" AND ("SILICONFLOW" OR "siliconflow" OR "sk-")
+"connection" AND ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 日志文件中的SiliconFlow密钥
+extension:log ("SILICONFLOW" OR "siliconflow" OR "sk-")
+extension:txt ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 备份文件中的SiliconFlow密钥
+extension:bak ("SILICONFLOW" OR "siliconflow" OR "sk-")
+extension:backup ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 临时文件中的SiliconFlow密钥
+extension:tmp ("SILICONFLOW" OR "siliconflow" OR "sk-")
+extension:temp ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 文档文件中的SiliconFlow密钥
+filename:README ("SILICONFLOW" OR "siliconflow" OR "sk-")
+filename:CHANGELOG ("SILICONFLOW" OR "siliconflow" OR "sk-")
+filename:CONTRIBUTING ("SILICONFLOW" OR "siliconflow" OR "sk-")
+
+# 特定编程语言模式
+language:python "siliconflow" AND ("api_key" OR "apikey")
+language:javascript "siliconflow" AND ("api_key" OR "apikey")
+language:typescript "siliconflow" AND ("api_key" OR "apikey")
+language:java "siliconflow" AND ("api_key" OR "apikey")
+language:go "siliconflow" AND ("api_key" OR "apikey")
+language:rust "siliconflow" AND ("api_key" OR "apikey")
+language:php "siliconflow" AND ("api_key" OR "apikey")
+language:ruby "siliconflow" AND ("api_key" OR "apikey")
+language:swift "siliconflow" AND ("api_key" OR "apikey")
+language:kotlin "siliconflow" AND ("api_key" OR "apikey")
+
+# 特定模型搜索
+"deepseek-ai/deepseek-chat" AND ("key" OR "api" OR "token")
+"deepseek-ai/deepseek-coder" AND ("key" OR "api" OR "token")
+"Qwen/Qwen2.5-7B-Instruct" AND ("key" OR "api" OR "token")
+"Qwen/Qwen2.5-14B-Instruct" AND ("key" OR "api" OR "token")
+"baichuan2/Baichuan2-7B-Chat" AND ("key" OR "api" OR "token")

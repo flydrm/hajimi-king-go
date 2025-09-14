@@ -23,6 +23,7 @@ import (
 	"hajimi-king-go/internal/logger"
 	"hajimi-king-go/internal/models"
 	"hajimi-king-go/internal/openrouter"
+	"hajimi-king-go/internal/siliconflow"
 	"hajimi-king-go/internal/syncutils"
 )
 
@@ -100,8 +101,8 @@ func NewHajimiKing() *HajimiKing {
 		},
 		// 初始化批量处理缓冲区
 		keyValidationBuffer: make(chan string, 100),
-		// 预编译正则表达式 - 支持OpenRouter和Gemini密钥
-		compiledRegex: regexp.MustCompile(`(sk-or-[A-Za-z0-9\-_]{48}|AIzaSy[A-Za-z0-9\-_]{33})`),
+		// 预编译正则表达式 - 支持OpenRouter、SiliconFlow和Gemini密钥
+		compiledRegex: regexp.MustCompile(`(sk-or-[A-Za-z0-9\-_]{48}|sk-[A-Za-z0-9\-_]{48}|AIzaSy[A-Za-z0-9\-_]{33})`),
 	}
 
 	// 启动批量验证协程
@@ -453,6 +454,8 @@ func (hk *HajimiKing) validateAPIKey(apiKey string) string {
 		return hk.validateOpenRouterKey(apiKey)
 	case "gemini":
 		return hk.validateGeminiKey(apiKey)
+	case "siliconflow":
+		return hk.validateSiliconFlowKey(apiKey)
 	default:
 		// 默认使用OpenRouter
 		return hk.validateOpenRouterKey(apiKey)
@@ -475,6 +478,30 @@ func (hk *HajimiKing) validateOpenRouterKey(apiKey string) string {
 		if err != nil {
 			// 如果测试失败但模型列表验证成功，仍然认为密钥有效
 			hk.logger.Warningf("⚠️ OpenRouter test failed but models accessible: %v", err)
+			return "ok"
+		}
+		return testResult
+	}
+	
+	return result
+}
+
+// validateSiliconFlowKey 验证SiliconFlow密钥
+func (hk *HajimiKing) validateSiliconFlowKey(apiKey string) string {
+	client := siliconflow.NewClient(apiKey)
+	
+	// 首先尝试简单的模型列表验证
+	result, err := client.ValidateAPIKey()
+	if err != nil {
+		return "error:" + err.Error()
+	}
+	
+	// 如果模型列表验证成功，进行更彻底的聊天测试
+	if result == "ok" {
+		testResult, err := client.TestAPIKey()
+		if err != nil {
+			// 如果测试失败但模型列表验证成功，仍然认为密钥有效
+			hk.logger.Warningf("⚠️ SiliconFlow test failed but models accessible: %v", err)
 			return "ok"
 		}
 		return testResult
