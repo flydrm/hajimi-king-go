@@ -4,7 +4,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 )
 
 // SmartKeyDetector implements intelligent key detection
@@ -90,7 +89,7 @@ func (skd *SmartKeyDetector) DetectKeys(content string) []*KeyContext {
 	lines := strings.Split(content, "\n")
 
 	for lineNum, line := range lines {
-		for patternName, pattern := range skd.patterns {
+		for _, pattern := range skd.patterns {
 			matches := pattern.Pattern.FindAllStringIndex(line, -1)
 			for _, match := range matches {
 				key := line[match[0]:match[1]]

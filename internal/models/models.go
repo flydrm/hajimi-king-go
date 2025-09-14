@@ -142,7 +142,6 @@ type QueryTask struct {
 	Platform    string
 	Query       string
 	Priority    int
-	HajimiKing  *OptimizedHajimiKing
 }
 
 // QueryResult represents the result of a query task
@@ -161,7 +160,6 @@ type ValidationTask struct {
 	Platform    string
 	Key         string
 	Priority    int
-	HajimiKing  *OptimizedHajimiKing
 }
 
 // ValidationResult represents the result of a validation task

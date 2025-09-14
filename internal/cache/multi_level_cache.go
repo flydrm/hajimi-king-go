@@ -1,10 +1,7 @@
 package cache
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -253,6 +250,15 @@ func (mlc *MultiLevelCache) GetHitRate() float64 {
 		return 0.0
 	}
 	return float64(mlc.metrics.TotalHits) / float64(total)
+}
+
+// GetHitRate returns the cache hit rate for CacheMetrics
+func (cm *CacheMetrics) GetHitRate() float64 {
+	total := cm.TotalHits + cm.TotalMisses
+	if total == 0 {
+		return 0.0
+	}
+	return float64(cm.TotalHits) / float64(total)
 }
 
 // GetMetrics returns cache metrics

@@ -1,48 +1,61 @@
-# 构建阶段
+# Multi-stage build for Hajimi King Go v2.0
 FROM golang:1.21-alpine AS builder
 
-# 设置工作目录
+# Set working directory
 WORKDIR /app
 
-# 安装必要的工具
-RUN apk add --no-cache git ca-certificates
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
 
-# 复制go mod文件
+# Copy go mod files
 COPY go.mod go.sum ./
 
-# 下载依赖
+# Download dependencies
 RUN go mod download
 
-# 复制源代码
+# Copy source code
 COPY . .
 
-# 构建应用
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hajimi-king cmd/app/main.go
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hajimi-king-v2 ./cmd/app
 
-# 运行阶段
+# Final stage
 FROM alpine:latest
 
-# 安装ca-certificates用于HTTPS请求
+# Install ca-certificates for HTTPS requests
 RUN apk --no-cache add ca-certificates tzdata
 
-# 设置工作目录
-WORKDIR /root/
+# Create non-root user
+RUN adduser -D -s /bin/sh hajimi
 
-# 从构建阶段复制二进制文件
-COPY --from=builder /app/hajimi-king .
+# Set working directory
+WORKDIR /app
 
-# 复制配置文件示例
-COPY --from=builder /app/queries.example .
-COPY --from=builder /app/.env.example .
+# Copy binary from builder stage
+COPY --from=builder /app/hajimi-king-v2 .
 
-# 创建数据目录
-RUN mkdir -p data
+# Copy web assets
+COPY --from=builder /app/web ./web
 
-# 暴露端口（如果需要）
+# Copy example configuration
+COPY --from=builder /app/.env.example ./.env.example
+COPY --from=builder /app/queries.txt ./queries.txt
+
+# Create data directory
+RUN mkdir -p data logs cache
+
+# Change ownership to non-root user
+RUN chown -R hajimi:hajimi /app
+
+# Switch to non-root user
+USER hajimi
+
+# Expose port
 EXPOSE 8080
 
-# 设置环境变量
-ENV TZ=Asia/Shanghai
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
-# 运行应用
-CMD ["./hajimi-king"]
+# Run the application
+CMD ["./hajimi-king-v2"]

@@ -480,11 +480,38 @@ func (qt *QueryTask) Execute() concurrent.Result {
 		}
 	}
 
+	// Convert GitHub items to models
+	var modelItems []models.GitHubSearchItem
+	for _, item := range items {
+		modelItems = append(modelItems, models.GitHubSearchItem{
+			Name:        item.Name,
+			Path:        item.Path,
+			URL:         item.URL,
+			Repository:  models.GitHubRepository{
+				ID:          item.Repository.ID,
+				Name:        item.Repository.Name,
+				FullName:    item.Repository.FullName,
+				Description: item.Repository.Description,
+				URL:         item.Repository.URL,
+				HTMLURL:     item.Repository.HTMLURL,
+				CloneURL:    item.Repository.CloneURL,
+				Language:    item.Repository.Language,
+				Size:        item.Repository.Size,
+				Stars:       item.Repository.Stars,
+				Forks:       item.Repository.Forks,
+				CreatedAt:   item.Repository.CreatedAt,
+				UpdatedAt:   item.Repository.UpdatedAt,
+			},
+			TextMatches: convertTextMatches(item.TextMatches),
+			Score:       item.Score,
+		})
+	}
+
 	return &QueryResult{
 		TaskID:      qt.ID,
 		Platform:    qt.Platform,
 		Query:       qt.Query,
-		Items:       items,
+		Items:       modelItems,
 		ProcessedAt: time.Now(),
 	}
 }
@@ -591,6 +618,28 @@ func (vr *ValidationResult) GetError() error {
 
 func (vr *ValidationResult) GetData() interface{} {
 	return vr
+}
+
+// convertTextMatches converts GitHub text matches to models
+func convertTextMatches(matches []github.TextMatch) []models.TextMatch {
+	var modelMatches []models.TextMatch
+	for _, match := range matches {
+		var modelMatchIndices []models.Match
+		for _, m := range match.Matches {
+			modelMatchIndices = append(modelMatchIndices, models.Match{
+				Text:    m.Text,
+				Indices: m.Indices,
+			})
+		}
+		modelMatches = append(modelMatches, models.TextMatch{
+			ObjectURL:  match.ObjectURL,
+			ObjectType: match.ObjectType,
+			Property:   match.Property,
+			Fragment:   match.Fragment,
+			Matches:    modelMatchIndices,
+		})
+	}
+	return modelMatches
 }
 
 func main() {

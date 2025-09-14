@@ -1,425 +1,296 @@
-# Hajimi King Go
+# Hajimi King Go v2.0 - 多平台API密钥发现系统
 
-🎪 **Hajimi King Go** - 人人都是哈基米大王 👑  
+## 🚀 项目概述
 
-这是一个用于从GitHub搜索和验证Google Gemini API密钥的Go语言版本项目。  
-基于 [GakkiNoOne/hajimi-king](https://github.com/GakkiNoOne/hajimi-king) 项目重构，提供更好的性能和并发处理能力。
+Hajimi King Go v2.0 是一个高性能的多平台API密钥发现系统，支持从GitHub代码中智能发现和验证多个平台的API密钥，包括Google Gemini、OpenRouter和SiliconFlow。
 
-⚠️ **注意**：本项目正处于beta期间，功能、结构、接口等都有可能变化，不保证稳定性，请自行承担风险。
+## ✨ 核心特性
 
-## 🚀 核心功能
+### 🔧 多平台支持
+- **Google Gemini API**: 支持AIza开头的API密钥发现和验证
+- **OpenRouter API**: 支持sk-or-开头的API密钥发现和验证  
+- **SiliconFlow API**: 支持sk-开头的API密钥发现和验证
+- **可扩展架构**: 支持未来添加更多平台
 
-1. **🔍 GitHub搜索Gemini Key** - 基于自定义查询表达式搜索GitHub代码中的API密钥
-2. **🌐 代理支持** - 支持多代理轮换，提高访问稳定性和成功率
-3. **📊 增量扫描** - 支持断点续传，避免重复扫描已处理的文件
-4. **🚫 智能过滤** - 自动过滤文档、示例、测试文件，专注有效代码
-5. **🔄 外部同步** - 支持向Gemini-Balancer和GPT-Load同步发现的密钥
-6. **🔐 持久化登录** - Web界面支持24小时自动登录，提升使用体验
+### ⚡ 高性能优化
+- **并发处理**: Worker Pool模式，支持多平台并发处理
+- **多级缓存**: L1内存缓存 + L2文件缓存 + L3Redis缓存（可选）
+- **智能检测**: 基于上下文的智能密钥识别，过滤占位符和测试密钥
+- **增量扫描**: 支持断点续传和增量更新
 
-### 🔮 待开发功能 (TODO)
+### 🎛️ 灵活配置
+- **平台开关**: 支持全局开关和单平台控制
+- **执行模式**: 全部执行、单平台执行、选中平台执行
+- **环境变量**: 完全基于环境变量的配置管理
+- **热重载**: 配置变更无需重启
 
-- [ ] **💾 数据库支持保存key** - 支持将发现的API密钥持久化存储到数据库中
-- [x] **📊 API、可视化展示抓取的key列表** - 提供API接口和可视化界面获取已抓取的密钥列表
-- [x] **🔐 网页持久化登录** - 支持JWT令牌认证，24小时自动登录无需重复输入
-- [ ] **💰 付费key检测** - 额外check下付费key
+### 📊 监控和指标
+- **实时指标**: 处理速度、缓存命中率、检测准确率
+- **Web界面**: 现代化的管理界面，支持密钥查看和管理
+- **日志系统**: 结构化日志，支持多级别日志记录
+- **性能监控**: 详细的性能指标和系统状态
 
-## 📋 项目结构 🗂️
+## 🏗️ 系统架构
 
 ```
-hajimi-king-go/
-├── cmd/app/                    # 应用程序入口
-│   └── main.go                  # 主程序文件
-├── internal/
-│   ├── api/                    # API服务器
-│   │   └── server.go           # REST API服务器
-│   ├── config/                 # 配置管理
-│   │   └── config.go           # 配置加载和管理
-│   ├── logger/                 # 日志管理
-│   │   └── logger.go           # 日志记录器
-│   ├── github/                 # GitHub客户端
-│   │   └── client.go           # GitHub API客户端
-│   ├── filemanager/            # 文件管理器
-│   │   └── manager.go          # 文件操作和检查点管理
-│   ├── syncutils/              # 同步工具
-│   │   └── sync.go             # 外部服务同步
-│   └── models/                 # 数据模型
-│       └── models.go           # 数据结构定义
-├── web/                        # 前端界面
-│   └── index.html              # 密钥管理面板
-├── go.mod                      # Go模块文件
-├── go.sum                      # 依赖校验文件
-├── .env.example                # 环境变量示例
-├── queries.example             # 查询配置示例
-└── README.md                   # 项目文档
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        Hajimi King Go v2.0 - 优化架构                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                配置层                                            │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                  │
+│  │ 环境变量配置     │  │ 平台开关配置     │  │ 缓存配置         │                  │
+│  │ PLATFORM_*     │  │ PlatformSwitches│  │ CacheConfig     │                  │
+│  │ CACHE_*        │  │ ExecutionMode   │  │ MultiLevelCache │                  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                应用核心层                                        │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────────────────┐ │
+│  │                        OptimizedHajimiKing                                │ │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │ │
+│  │  │ WorkerPool  │  │CacheManager │  │SmartDetector│  │SystemMetrics│      │ │
+│  │  │ 并发处理     │  │ 多级缓存     │  │ 智能识别     │  │ 系统指标     │      │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘      │ │
+│  └─────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              平台处理层                                          │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
+│  │   Gemini    │  │ OpenRouter  │  │ SiliconFlow │  │   Future    │            │
+│  │  Platform   │  │  Platform   │  │  Platform   │  │  Platforms  │            │
+│  │ 查询+验证   │  │ 查询+验证   │  │ 查询+验证   │  │ 查询+验证   │            │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘            │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🖥️ 本地部署 🚀
+## 🚀 快速开始
 
-### 1. 环境准备 🔧
+### 1. 环境要求
+- Go 1.21+
+- GitHub API Token
+- 目标平台的API密钥（可选）
+
+### 2. 安装和配置
 
 ```bash
-# 确保已安装Go 1.21+
-go version
-
 # 克隆项目
 git clone <repository-url>
-cd hajimi-king-go
+cd hajimi-king-go-v2
 
-# 下载依赖
+# 安装依赖
 go mod tidy
-```
 
-### 2. 项目设置 📁
-
-```bash
 # 复制配置文件
 cp .env.example .env
 
-# 复制查询文件
-cp queries.example queries.txt
+# 编辑配置文件
+vim .env
 ```
 
-### 3. 配置环境变量 🔑
+### 3. 配置说明
 
-编辑 `.env` 文件，**必须**配置GitHub Token：
+#### 必需配置
+```bash
+# GitHub配置
+GITHUB_TOKEN=your_github_token_here
+
+# 平台开关
+PLATFORM_GLOBAL_ENABLED=true
+PLATFORM_EXECUTION_MODE=all
+PLATFORM_GEMINI_ENABLED=true
+```
+
+#### 可选配置
+```bash
+# API密钥（用于验证）
+GEMINI_API_KEY=your_gemini_api_key_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+SILICONFLOW_API_KEY=your_siliconflow_api_key_here
+
+# 性能调优
+WORKER_POOL_SIZE=8
+MAX_CONCURRENT_FILES=10
+CACHE_L1_MAX_SIZE=1000
+
+# 外部同步
+SYNC_TO_GEMINI_BALANCER=false
+SYNC_TO_GPT_LOAD=false
+```
+
+### 4. 运行应用
 
 ```bash
-# 必填：GitHub访问令牌
-GITHUB_TOKENS=ghp1,ghp2,ghp3
+# 编译
+go build -o hajimi-king-v2 ./cmd/app
 
-# 可选：其他配置保持默认值即可
+# 运行
+./hajimi-king-v2
 ```
 
-> 💡 **获取GitHub Token**：访问 [GitHub Settings > Tokens](https://github.com/settings/tokens)，创建具有 `public_repo` 权限的访问令牌 🎫
+### 5. 访问Web界面
 
-### 🌐 代理配置
+打开浏览器访问: http://localhost:8080
 
-强烈建议使用！GITHUB、GEMINI 访问长时间高频都会BAN IP
+默认登录信息:
+- 用户名: admin
+- 密码: admin
 
-如果需要使用代理访问GitHub或Gemini API，推荐使用本地WARP代理：
+## 📁 项目结构
 
-> 🌐 **代理方案**：[warp-docker](https://github.com/cmj2002/warp-docker) - 本地WARP代理解决方案
-
-在 `.env` 文件中配置：
-```bash
-# 多个代理使用逗号分隔
-PROXY=http://localhost:1080
+```
+hajimi-king-go-v2/
+├── cmd/app/                    # 主程序入口
+│   └── main.go
+├── internal/                   # 内部包
+│   ├── api/                   # API服务器
+│   ├── cache/                 # 多级缓存系统
+│   ├── config/                # 配置管理
+│   ├── concurrent/            # 并发处理
+│   ├── detection/             # 智能检测
+│   ├── filemanager/           # 文件管理
+│   ├── github/                # GitHub客户端
+│   ├── logger/                # 日志系统
+│   ├── metrics/               # 指标收集
+│   ├── models/                # 数据模型
+│   ├── platform/              # 平台抽象
+│   └── syncutils/             # 外部同步
+├── web/                       # Web界面
+│   └── index.html
+├── docs/                      # 文档
+├── .env.example              # 配置示例
+├── queries.txt               # 搜索查询
+└── README.md
 ```
 
-### 4. 运行程序 ⚡
+## 🔧 配置选项
 
-```bash
-# 创建数据目录
-mkdir -p data
+### 平台开关配置
 
-# 运行程序
-go run cmd/app/main.go
+| 环境变量 | 默认值 | 说明 |
+|---------|--------|------|
+| PLATFORM_GLOBAL_ENABLED | true | 全局平台开关 |
+| PLATFORM_EXECUTION_MODE | all | 执行模式：all/single/selected |
+| PLATFORM_GEMINI_ENABLED | true | Gemini平台开关 |
+| PLATFORM_OPENROUTER_ENABLED | false | OpenRouter平台开关 |
+| PLATFORM_SILICONFLOW_ENABLED | false | SiliconFlow平台开关 |
 
-# 或者编译后运行
-go build -o hajimi-king cmd/app/main.go
-./hajimi-king
-```
+### 性能配置
 
-### 5. 本地运行管理 🎮
+| 环境变量 | 默认值 | 说明 |
+|---------|--------|------|
+| WORKER_POOL_SIZE | 8 | Worker Pool大小 |
+| MAX_CONCURRENT_FILES | 10 | 最大并发文件数 |
+| CACHE_L1_MAX_SIZE | 1000 | L1缓存最大大小 |
+| CACHE_L1_TTL | 5m | L1缓存TTL |
+| CACHE_L2_TTL | 1h | L2缓存TTL |
 
-```bash
-# 查看日志文件
-tail -f data/logs/keys_valid_detail_*.log
+## 📊 监控指标
 
-# 查看找到的有效密钥
-cat data/keys/keys_valid_*.txt
+### 系统指标
+- 处理文件数
+- 发现密钥数
+- 有效密钥数
+- 限流密钥数
+- 处理速度（密钥/秒）
+- 内存使用量
 
-# 启动Web界面（已启用API_ENABLED=true）
-# 访问 http://localhost:8080，使用配置的API_AUTH_KEY登录
-open http://localhost:8080
+### 缓存指标
+- 缓存命中率
+- 缓存未命中率
+- 缓存大小
+- 缓存操作统计
 
-# 停止程序
-Ctrl + C
-```
+### 检测指标
+- 检测准确率
+- 误报率
+- 过滤统计
 
-### 6. API和Web界面使用 🌐
-
-当启用API服务器后，可以通过以下方式访问：
-
-- **Web界面**: http://localhost:8080
-- **API文档**:
-  - `POST /api/auth` - 认证登录
-  - `GET /api/keys` - 获取密钥列表
-  - `GET /api/stats` - 获取统计信息  
-  - `GET /api/health` - 健康检查
-  - `GET /api/debug/files` - 调试文件信息
-
-### 7. 密钥文件设置和调试 🔧
-
-密钥文件存储在 `data/keys/` 目录下，按照以下格式命名：
-
-- **有效密钥文件**: `keys_valid_YYYYMMDD_HHMMSS.txt`
-- **限流密钥文件**: `key_429_YYYYMMDD_HHMMSS.txt`
-
-#### 检查密钥文件
-
-```bash
-# 运行检查脚本
-./check_keys.sh
-
-# 或手动检查
-ls -la data/keys/
-```
-
-#### 密钥文件格式
-
-每个密钥文件包含以下格式的行：
-```
-AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx|user/repo|path/to/file|https://github.com/user/repo/blob/main/path/to/file
-```
-
-格式说明：
-- **第1部分**: API密钥
-- **第2部分**: 仓库名称
-- **第3部分**: 文件路径
-- **第4部分**: 文件URL
-
-#### 调试API
-
-如果密钥无法在Web界面中显示，可以使用调试接口：
+## 🧪 测试
 
 ```bash
-# 调试文件信息
-curl "http://localhost:8080/api/debug/files" \
-  -H "Authorization: Bearer your_secure_access_key_here"
+# 运行所有测试
+go test ./...
+
+# 运行特定包测试
+go test ./internal/config
+go test ./internal/cache
+go test ./internal/detection
+
+# 运行测试并显示覆盖率
+go test -cover ./...
 ```
 
-这将返回：
-- 数据目录路径
-- 密钥文件前缀配置
-- 找到的密钥文件列表
-- 缓存的密钥数量
-- 缓存最后更新时间
+## 🚀 部署
 
-#### 常见问题
-
-1. **没有找到密钥文件**
-   - 确保程序已经运行并发现了密钥
-   - 检查 `DATA_PATH` 配置是否正确
-   - 验证密钥文件前缀配置
-
-2. **密钥文件格式错误**
-   - 确保文件使用 `|` 分隔符
-   - 每行包含完整的4个字段
-
-3. **API无法读取密钥**
-   - 检查文件权限
-   - 确保API服务器有读取权限
-   - 使用调试接口检查文件读取状态
-
-#### 🔐 安全认证
-
-如果设置了 `API_AUTH_KEY`，访问Web界面和API需要进行认证：
-
-1. **Web界面**: 打开 http://localhost:8080，输入访问密钥
-2. **API访问**: 需要在请求头中包含认证信息
-
-**API认证示例**:
-```bash
-# 1. 获取认证token
-curl -X POST "http://localhost:8080/api/auth" \
-  -H "Content-Type: application/json" \
-  -d '{"auth_key": "your_secure_access_key_here"}'
-
-# 2. 使用token访问API
-curl "http://localhost:8080/api/keys?page=1&page_size=20" \
-  -H "Authorization: Bearer your_secure_access_key_here"
-
-# 3. 搜索特定仓库的密钥
-curl "http://localhost:8080/api/keys?repository=user/repo" \
-  -H "Authorization: Bearer your_secure_access_key_here"
-
-# 4. 只获取有效密钥
-curl "http://localhost:8080/api/keys?key_type=valid" \
-  -H "Authorization: Bearer your_secure_access_key_here"
-
-# 5. 搜索包含特定字符串的密钥
-curl "http://localhost:8080/api/keys?search=AIzaSy" \
-  -H "Authorization: Bearer your_secure_access_key_here"
-```
-
-> ⚠️ **安全提醒**: 
-> - 请使用强密码作为 `API_AUTH_KEY`
-> - 定期更换访问密钥
-> - 不要将访问密钥提交到版本控制
-> - 建议在生产环境中启用HTTPS
-
-## ⚙️ 配置变量说明 📖
-
-以下是所有可配置的环境变量，在 `.env` 文件中设置：
-
-### 🔴 必填配置 ⚠️
-
-| 变量名 | 说明 | 示例值 |
-|--------|------|--------|
-| `GITHUB_TOKENS` | GitHub API访问令牌，多个用逗号分隔 🎫 | `ghp_token1,ghp_token2` |
-
-### 🟡 重要配置（建议了解）🤓
-
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `PROXY` | 空 | 代理服务器地址，支持多个（逗号分隔）和账密认证 🌐 |
-| `DATA_PATH` | `./data` | 数据存储目录路径 📂 |
-| `DATE_RANGE_DAYS` | `730` | 仓库年龄过滤（天数），只扫描指定天数内的仓库 📅 |
-| `QUERIES_FILE` | `queries.txt` | 搜索查询配置文件路径 🎯 |
-| `HAJIMI_CHECK_MODEL` | `gemini-2.5-flash` | 用于验证key有效的模型 🤖 |
-| `API_ENABLED` | `false` | 是否启用API服务器和Web界面 🌐 |
-| `API_PORT` | `8080` | API服务器端口 🔌 |
-| `API_AUTH_KEY` | 空 | API访问密钥（设置后需要登录才能访问） 🔐 |
-| `GEMINI_BALANCER_SYNC_ENABLED` | `false` | 是否启用Gemini Balancer同步 🔗 |
-| `GEMINI_BALANCER_URL` | 空 | Gemini Balancer服务地址 🌐 |
-| `GEMINI_BALANCER_AUTH` | 空 | Gemini Balancer认证信息 🔐 |
-| `GPT_LOAD_SYNC_ENABLED` | `false` | 是否启用GPT Load Balancer同步 🔗 |
-| `GPT_LOAD_URL` | 空 | GPT Load 服务地址 🌐 |
-| `GPT_LOAD_AUTH` | 空 | GPT Load 认证Token 🔐 |
-| `GPT_LOAD_GROUP_NAME` | 空 | GPT Load 组名，多个用逗号分隔 👥 |
-
-### 🟢 可选配置（不懂就别动）😅
-
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `VALID_KEY_PREFIX` | `keys/keys_valid_` | 有效密钥文件名前缀 🗝️ |
-| `RATE_LIMITED_KEY_PREFIX` | `keys/key_429_` | 频率限制密钥文件名前缀 ⏰ |
-| `KEYS_SEND_PREFIX` | `keys/keys_send_` | 发送到外部应用的密钥文件名前缀 🚀 |
-| `VALID_KEY_DETAIL_PREFIX` | `logs/keys_valid_detail_` | 详细日志文件名前缀 📝 |
-| `RATE_LIMITED_KEY_DETAIL_PREFIX` | `logs/key_429_detail_` | 频率限制详细日志文件名前缀 📊 |
-| `SCANNED_SHAS_FILE` | `scanned_shas.txt` | 已扫描文件SHA记录文件名 📋 |
-| `FILE_PATH_BLACKLIST` | `readme,docs,...` | 文件路径黑名单，逗号分隔 🚫 |
-
-### 配置文件示例 💫
-
-完整的 `.env` 文件示例：
+### Docker部署
 
 ```bash
-# 必填配置
-GITHUB_TOKENS=ghp_your_token_here_1,ghp_your_token_here_2
+# 构建镜像
+docker build -t hajimi-king-v2 .
 
-# 重要配置（可选修改）
-DATA_PATH=./data
-DATE_RANGE_DAYS=730
-QUERIES_FILE=queries.txt
-HAJIMI_CHECK_MODEL=gemini-2.5-flash
-API_ENABLED=true
-API_PORT=8080
-API_AUTH_KEY=your_secure_access_key_here
-PROXY=
-
-# Gemini Balancer同步配置
-GEMINI_BALANCER_SYNC_ENABLED=false
-GEMINI_BALANCER_URL=
-GEMINI_BALANCER_AUTH=
-
-# GPT Load Balancer同步配置
-GPT_LOAD_SYNC_ENABLED=false
-GPT_LOAD_URL=
-GPT_LOAD_AUTH=
-GPT_LOAD_GROUP_NAME=group1,group2,group3
-
-# 高级配置（建议保持默认）
-VALID_KEY_PREFIX=keys/keys_valid_
-RATE_LIMITED_KEY_PREFIX=keys/key_429_
-KEYS_SEND_PREFIX=keys/keys_send_
-VALID_KEY_DETAIL_PREFIX=logs/keys_valid_detail_
-RATE_LIMITED_KEY_DETAIL_PREFIX=logs/key_429_detail_
-KEYS_SEND_DETAIL_PREFIX=logs/keys_send_detail_
-SCANNED_SHAS_FILE=scanned_shas.txt
-FILE_PATH_BLACKLIST=readme,docs,doc/,.md,example,sample,tutorial,test,spec,demo,mock
+# 运行容器
+docker run -d \
+  --name hajimi-king-v2 \
+  -p 8080:8080 \
+  -e GITHUB_TOKEN=your_token \
+  -e PLATFORM_GEMINI_ENABLED=true \
+  hajimi-king-v2
 ```
 
-### 查询配置文件 🔍
-
-编辑 `queries.txt` 文件自定义搜索规则：
-
-⚠️ **重要提醒**：query 是本项目的核心！好的表达式可以让搜索更高效，需要发挥自己的想象力！🧠💡
+### 系统服务
 
 ```bash
-# GitHub搜索查询配置文件
-# 每行一个查询语句，支持GitHub搜索语法
-# 以#开头的行为注释，空行会被忽略
+# 创建systemd服务文件
+sudo vim /etc/systemd/system/hajimi-king-v2.service
 
-# 基础搜索
-AIzaSy in:file
-AizaSy in:file filename:.env
+# 启动服务
+sudo systemctl enable hajimi-king-v2
+sudo systemctl start hajimi-king-v2
 ```
 
-> 📖 **搜索语法参考**：[GitHub Code Search Syntax](https://docs.github.com/en/search-github/searching-on-github/searching-code) 📚  
-> 🎯 **核心提示**：创造性的查询表达式是成功的关键，多尝试不同的组合！
+## 🔒 安全注意事项
 
-## 🔒 安全注意事项 🛡️
+1. **API密钥安全**: 确保API密钥安全存储，不要提交到版本控制
+2. **访问控制**: 生产环境请修改默认的JWT密钥和登录凭据
+3. **网络安全**: 建议在内网环境运行，或配置适当的防火墙规则
+4. **日志安全**: 敏感信息会自动脱敏处理
 
-- ✅ GitHub Token权限最小化（只需`public_repo`读取权限）🔐
-- ✅ 定期轮换GitHub Token 🔄
-- ✅ 不要将真实的API密钥提交到版本控制 🙈
-- ✅ 定期检查和清理发现的密钥文件 🧹
+## 🤝 贡献指南
 
-## 🐳 Docker部署 🌊
-
-### 方式一：使用环境变量
-
-```yaml
-version: '3.8'
-services:
-  hajimi-king-go:
-    build: .
-    container_name: hajimi-king-go
-    restart: unless-stopped
-    environment:
-      # 必填：GitHub访问令牌
-      - GITHUB_TOKENS=ghp_your_token_here_1,ghp_your_token_here_2
-      # 可选配置
-      - HAJIMI_CHECK_MODEL=gemini-2.5-flash
-      - QUERIES_FILE=queries.txt
-      - API_ENABLED=true
-      - API_PORT=8080
-      - API_AUTH_KEY=your_secure_access_key_here
-    volumes:
-      - ./data:/app/data
-    ports:
-      - "8080:8080"
-    working_dir: /app
-```
-
-### 方式二：使用.env文件
-
-```yaml
-version: '3.8'
-services:
-  hajimi-king-go:
-    build: .
-    container_name: hajimi-king-go
-    restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data
-    ports:
-      - "8080:8080"
-    working_dir: /app
-```
-
-## 📊 性能优势
-
-相比Python版本，Go版本具有以下优势：
-
-- **⚡ 更高的性能** - Go的编译型语言特性提供更好的执行效率
-- **🔄 原生并发** - Go的goroutine提供更高效的并发处理
-- **📦 单文件部署** - 编译后的单个二进制文件，无需依赖
-- **🧠 内存管理** - 更好的内存使用效率
-- **🌐 跨平台** - 轻松编译到不同平台
-
-## 🤝 贡献
-
-欢迎提交Issue和Pull Request来帮助改进项目！
+1. Fork 项目
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 打开 Pull Request
 
 ## 📄 许可证
 
-本项目采用MIT许可证，详见LICENSE文件。
+本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+
+## 🙏 致谢
+
+- [Go](https://golang.org/) - 编程语言
+- [GitHub API](https://docs.github.com/en/rest) - 代码搜索
+- [Google Gemini](https://ai.google.dev/) - AI平台
+- [OpenRouter](https://openrouter.ai/) - API平台
+- [SiliconFlow](https://siliconflow.cn/) - API平台
+
+## 📞 支持
+
+如有问题或建议，请通过以下方式联系：
+
+- 创建 [Issue](https://github.com/your-repo/issues)
+- 发送邮件到: your-email@example.com
 
 ---
 
-💖 **享受使用 Hajimi King Go 的快乐时光！** 🎉✨🎊
+**Hajimi King Go v2.0** - 让API密钥发现变得简单高效！ 🔑✨
