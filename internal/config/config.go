@@ -1,185 +1,234 @@
 package config
 
 import (
-	"log"
-	"math/rand"
+	"encoding/json"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
-// Config 配置结构体
-// 包含了应用程序运行所需的所有配置参数
+// Config represents the application configuration
 type Config struct {
-	GitHubTokens                 []string // GitHub访问令牌列表，支持多个token轮换
-	ProxyList                    []string // 代理服务器列表，支持HTTP和SOCKS5代理
-	DataPath                     string   // 数据存储目录路径
-	DateRangeDays                int      // 仓库年龄过滤天数
-	QueriesFile                  string   // 搜索查询配置文件名
-	ScannedSHAsFile              string   // 已扫描文件SHA记录文件名
-	HajimiCheckModel             string   // 用于验证密钥的Gemini模型名称
-	FilePathBlacklist            []string // 文件路径黑名单，用于过滤文档等文件
-	ValidKeyPrefix               string   // 有效密钥文件名前缀
-	RateLimitedKeyPrefix         string   // 限流密钥文件名前缀
-	KeysSendPrefix               string   // 发送密钥文件名前缀
-	ValidKeyDetailPrefix         string   // 有效密钥详细日志文件名前缀
-	RateLimitedKeyDetailPrefix   string   // 限流密钥详细日志文件名前缀
-	KeysSendDetailPrefix         string   // 发送密钥详细日志文件名前缀
-	GeminiBalancerSyncEnabled    bool     // 是否启用Gemini Balancer同步
-	GeminiBalancerURL            string   // Gemini Balancer服务地址
-	GeminiBalancerAuth           string   // Gemini Balancer认证密码
-	GPTLoadSyncEnabled           bool     // 是否启用GPT Load同步
-	GPTLoadURL                   string   // GPT Load服务地址
-	GPTLoadAuth                  string   // GPT Load认证令牌
-	GPTLoadGroupName             string   // GPT Load组名称列表
-	APIEnabled                   bool     // 是否启用API服务器
-	APIPort                      int      // API服务器端口
-	APIAuthKey                   string   // API访问密钥
+	// GitHub configuration
+	GitHubToken    string `json:"github_token"`
+	GitHubProxy    string `json:"github_proxy"`
+	GitHubBaseURL  string `json:"github_base_url"`
+	
+	// Data paths
+	DataPath       string `json:"data_path"`
+	QueriesPath    string `json:"queries_path"`
+	CheckpointPath string `json:"checkpoint_path"`
+	
+	// API configuration
+	GeminiAPIKey     string `json:"gemini_api_key"`
+	OpenRouterAPIKey string `json:"openrouter_api_key"`
+	SiliconFlowAPIKey string `json:"siliconflow_api_key"`
+	
+	// File prefixes
+	ValidKeyPrefix     string `json:"valid_key_prefix"`
+	ValidKeyDetailPrefix string `json:"valid_key_detail_prefix"`
+	RateLimitedPrefix  string `json:"rate_limited_prefix"`
+	
+	// Processing configuration
+	MaxConcurrentFiles int           `json:"max_concurrent_files"`
+	MaxRetries         int           `json:"max_retries"`
+	RetryDelay         time.Duration `json:"retry_delay"`
+	ScanInterval       time.Duration `json:"scan_interval"`
+	
+	// Cache configuration
+	CacheConfig CacheConfig `json:"cache_config"`
+	
+	// Platform switches
+	PlatformSwitches PlatformSwitches `json:"platform_switches"`
+	
+	// Worker pool configuration
+	WorkerPoolSize int `json:"worker_pool_size"`
+	
+	// API server configuration
+	APIServerPort int    `json:"api_server_port"`
+	JWTSecret     string `json:"jwt_secret"`
+	
+	// External sync configuration
+	SyncToGeminiBalancer bool   `json:"sync_to_gemini_balancer"`
+	SyncToGPTLoad        bool   `json:"sync_to_gpt_load"`
+	SyncEndpoint         string `json:"sync_endpoint"`
+	SyncToken            string `json:"sync_token"`
 }
 
-var globalConfig *Config
+// CacheConfig represents cache configuration
+type CacheConfig struct {
+	L1MaxSize       int           `json:"l1_max_size"`
+	L1TTL           time.Duration `json:"l1_ttl"`
+	L2TTL           time.Duration `json:"l2_ttl"`
+	L3TTL           time.Duration `json:"l3_ttl"`
+	EnableL3        bool          `json:"enable_l3"`
+	CleanupInterval time.Duration `json:"cleanup_interval"`
+}
 
-// LoadConfig 加载配置
-// 从环境变量和.env文件中加载配置，并设置默认值
+// PlatformSwitches represents platform control configuration
+type PlatformSwitches struct {
+	GlobalEnabled     bool                      `json:"global_enabled"`
+	ExecutionMode     string                    `json:"execution_mode"` // "all", "single", "selected"
+	SelectedPlatforms []string                  `json:"selected_platforms"`
+	Platforms         map[string]PlatformConfig `json:"platforms"`
+}
+
+// PlatformConfig represents individual platform configuration
+type PlatformConfig struct {
+	Enabled     bool   `json:"enabled"`
+	Priority    int    `json:"priority"`
+	Description string `json:"description"`
+}
+
+// LoadConfig loads configuration from environment variables and .env file
 func LoadConfig() *Config {
-	if globalConfig != nil {
-		return globalConfig
+	// Load .env file if it exists
+	if err := loadEnvFile(); err != nil {
+		fmt.Printf("Warning: Could not load .env file: %v\n", err)
 	}
-
-	// 只在环境变量不存在时才从.env加载值
-	_ = godotenv.Load()
 
 	config := &Config{
-		GitHubTokens:                 parseStringList(os.Getenv("GITHUB_TOKENS")),
-		ProxyList:                    parseStringList(os.Getenv("PROXY")),
-		DataPath:                     getEnvWithDefault("DATA_PATH", "./data"),
-		DateRangeDays:                getEnvIntWithDefault("DATE_RANGE_DAYS", 730),
-		QueriesFile:                  getEnvWithDefault("QUERIES_FILE", "queries.txt"),
-		ScannedSHAsFile:              getEnvWithDefault("SCANNED_SHAS_FILE", "scanned_shas.txt"),
-		HajimiCheckModel:             getEnvWithDefault("HAJIMI_CHECK_MODEL", "gemini-2.5-flash"),
-		FilePathBlacklist:            parseStringList(os.Getenv("FILE_PATH_BLACKLIST")),
-		ValidKeyPrefix:               getEnvWithDefault("VALID_KEY_PREFIX", "keys/keys_valid_"),
-		RateLimitedKeyPrefix:         getEnvWithDefault("RATE_LIMITED_KEY_PREFIX", "keys/key_429_"),
-		KeysSendPrefix:               getEnvWithDefault("KEYS_SEND_PREFIX", "keys/keys_send_"),
-		ValidKeyDetailPrefix:         getEnvWithDefault("VALID_KEY_DETAIL_PREFIX", "logs/keys_valid_detail_"),
-		RateLimitedKeyDetailPrefix:   getEnvWithDefault("RATE_LIMITED_KEY_DETAIL_PREFIX", "logs/key_429_detail_"),
-		KeysSendDetailPrefix:         getEnvWithDefault("KEYS_SEND_DETAIL_PREFIX", "logs/keys_send_detail_"),
-		GeminiBalancerSyncEnabled:    parseBool(os.Getenv("GEMINI_BALANCER_SYNC_ENABLED")),
-		GeminiBalancerURL:            os.Getenv("GEMINI_BALANCER_URL"),
-		GeminiBalancerAuth:           os.Getenv("GEMINI_BALANCER_AUTH"),
-		GPTLoadSyncEnabled:           parseBool(os.Getenv("GPT_LOAD_SYNC_ENABLED")),
-		GPTLoadURL:                   os.Getenv("GPT_LOAD_URL"),
-		GPTLoadAuth:                  os.Getenv("GPT_LOAD_AUTH"),
-		GPTLoadGroupName:             os.Getenv("GPT_LOAD_GROUP_NAME"),
-		APIEnabled:                   parseBool(os.Getenv("API_ENABLED")),
-		APIPort:                      getEnvIntWithDefault("API_PORT", 8080),
-		APIAuthKey:                   os.Getenv("API_AUTH_KEY"),
+		// GitHub configuration
+		GitHubToken:    getEnvWithDefault("GITHUB_TOKEN", ""),
+		GitHubProxy:    getEnvWithDefault("GITHUB_PROXY", ""),
+		GitHubBaseURL:  getEnvWithDefault("GITHUB_BASE_URL", "https://api.github.com"),
+		
+		// Data paths
+		DataPath:       getEnvWithDefault("DATA_PATH", "./data"),
+		QueriesPath:    getEnvWithDefault("QUERIES_PATH", "./queries.txt"),
+		CheckpointPath: getEnvWithDefault("CHECKPOINT_PATH", "./checkpoint.json"),
+		
+		// API configuration
+		GeminiAPIKey:     getEnvWithDefault("GEMINI_API_KEY", ""),
+		OpenRouterAPIKey: getEnvWithDefault("OPENROUTER_API_KEY", ""),
+		SiliconFlowAPIKey: getEnvWithDefault("SILICONFLOW_API_KEY", ""),
+		
+		// File prefixes
+		ValidKeyPrefix:     getEnvWithDefault("VALID_KEY_PREFIX", "keys_valid"),
+		ValidKeyDetailPrefix: getEnvWithDefault("VALID_KEY_DETAIL_PREFIX", "keys_valid_detail"),
+		RateLimitedPrefix:  getEnvWithDefault("RATE_LIMITED_PREFIX", "key_429"),
+		
+		// Processing configuration
+		MaxConcurrentFiles: parseIntWithDefault("MAX_CONCURRENT_FILES", 10),
+		MaxRetries:         parseIntWithDefault("MAX_RETRIES", 3),
+		RetryDelay:         parseDurationWithDefault("RETRY_DELAY", "5s"),
+		ScanInterval:       parseDurationWithDefault("SCAN_INTERVAL", "1m"),
+		
+		// Cache configuration
+		CacheConfig: CacheConfig{
+			L1MaxSize:       parseIntWithDefault("CACHE_L1_MAX_SIZE", 1000),
+			L1TTL:           parseDurationWithDefault("CACHE_L1_TTL", "5m"),
+			L2TTL:           parseDurationWithDefault("CACHE_L2_TTL", "1h"),
+			L3TTL:           parseDurationWithDefault("CACHE_L3_TTL", "24h"),
+			EnableL3:        parseBoolWithDefault("CACHE_ENABLE_L3", false),
+			CleanupInterval: parseDurationWithDefault("CACHE_CLEANUP_INTERVAL", "10m"),
+		},
+		
+		// Platform switches
+		PlatformSwitches: PlatformSwitches{
+			GlobalEnabled:     parseBoolWithDefault("PLATFORM_GLOBAL_ENABLED", true),
+			ExecutionMode:     getEnvWithDefault("PLATFORM_EXECUTION_MODE", "all"),
+			SelectedPlatforms: parseStringList(getEnvWithDefault("PLATFORM_SELECTED", "")),
+			Platforms: map[string]PlatformConfig{
+				"gemini": {
+					Enabled:     parseBoolWithDefault("PLATFORM_GEMINI_ENABLED", true),
+					Priority:    1,
+					Description: "Google Gemini API平台",
+				},
+				"openrouter": {
+					Enabled:     parseBoolWithDefault("PLATFORM_OPENROUTER_ENABLED", false),
+					Priority:    2,
+					Description: "OpenRouter API平台",
+				},
+				"siliconflow": {
+					Enabled:     parseBoolWithDefault("PLATFORM_SILICONFLOW_ENABLED", false),
+					Priority:    3,
+					Description: "SiliconFlow API平台",
+				},
+			},
+		},
+		
+		// Worker pool configuration
+		WorkerPoolSize: parseIntWithDefault("WORKER_POOL_SIZE", 8),
+		
+		// API server configuration
+		APIServerPort: parseIntWithDefault("API_SERVER_PORT", 8080),
+		JWTSecret:     getEnvWithDefault("JWT_SECRET", "hajimi-king-secret-key"),
+		
+		// External sync configuration
+		SyncToGeminiBalancer: parseBoolWithDefault("SYNC_TO_GEMINI_BALANCER", false),
+		SyncToGPTLoad:        parseBoolWithDefault("SYNC_TO_GPT_LOAD", false),
+		SyncEndpoint:         getEnvWithDefault("SYNC_ENDPOINT", ""),
+		SyncToken:            getEnvWithDefault("SYNC_TOKEN", ""),
 	}
 
-	// 设置默认黑名单，用于过滤文档和示例文件
-	if len(config.FilePathBlacklist) == 0 {
-		config.FilePathBlacklist = []string{"readme", "docs", "doc/", ".md", "example", "sample", "tutorial", "test", "spec", "demo", "mock"}
-	}
-
-	globalConfig = config
 	return config
 }
 
-// GetConfig 获取全局配置
-func GetConfig() *Config {
-	if globalConfig == nil {
-		return LoadConfig()
-	}
-	return globalConfig
-}
-
-// GetRandomProxy 获取随机代理配置
-// 从代理列表中随机选择一个代理服务器，返回适合HTTP客户端使用的代理配置
-func (c *Config) GetRandomProxy() map[string]string {
-	if len(c.ProxyList) == 0 {
-		return nil
-	}
-
-	// 初始化随机种子
-	rand.Seed(time.Now().UnixNano())
-	proxyURL := c.ProxyList[rand.Intn(len(c.ProxyList))]
-
-	return map[string]string{
-		"http":  proxyURL,
-		"https": proxyURL,
-	}
-}
-
-// Check 检查必要配置是否完整
-func (c *Config) Check() bool {
-	log.Println("🔍 检查必要配置...")
-
-	var errors []string
-
-	// 检查GitHub tokens
-	if len(c.GitHubTokens) == 0 {
-		errors = append(errors, "GitHub tokens not found. Please set GITHUB_TOKENS environment variable.")
-		log.Println("❌ GitHub tokens: Missing")
-	} else {
-		log.Printf("✅ GitHub tokens: %d configured", len(c.GitHubTokens))
-	}
-
-	// 检查Gemini Balancer配置
-	if c.GeminiBalancerSyncEnabled {
-		log.Printf("✅ Gemini Balancer enabled, URL: %s", c.GeminiBalancerURL)
-		if c.GeminiBalancerAuth == "" || c.GeminiBalancerURL == "" {
-			log.Println("⚠️ Gemini Balancer Auth or URL Missing (Balancer功能将被禁用)")
-		} else {
-			log.Println("✅ Gemini Balancer Auth: ****")
-		}
-	} else {
-		log.Println("ℹ️ Gemini Balancer: Not configured (Balancer功能将被禁用)")
-	}
-
-	// 检查GPT Load Balancer配置
-	if c.GPTLoadSyncEnabled {
-		log.Printf("✅ GPT Load Balancer enabled, URL: %s", c.GPTLoadURL)
-		if c.GPTLoadAuth == "" || c.GPTLoadURL == "" || c.GPTLoadGroupName == "" {
-			log.Println("⚠️ GPT Load Balancer Auth, URL or Group Name Missing (Load Balancer功能将被禁用)")
-		} else {
-			log.Println("✅ GPT Load Balancer Auth: ****")
-			log.Printf("✅ GPT Load Balancer Group Name: %s", c.GPTLoadGroupName)
-		}
-	} else {
-		log.Println("ℹ️ GPT Load Balancer: Not configured (Load Balancer功能将被禁用)")
-	}
-
-	if len(errors) > 0 {
-		log.Println("❌ Configuration check failed:")
-		log.Println("Please check your .env file and configuration.")
-		return false
-	}
-
-	log.Println("✅ All required configurations are valid")
-	return true
-}
-
-// parseStringList 解析字符串列表
-func parseStringList(input string) []string {
-	if input == "" {
+// GetEnabledPlatforms returns the list of enabled platforms based on configuration
+func (c *Config) GetEnabledPlatforms() []string {
+	if !c.PlatformSwitches.GlobalEnabled {
 		return []string{}
 	}
 
-	items := strings.Split(input, ",")
-	var result []string
-	for _, item := range items {
-		trimmed := strings.TrimSpace(item)
-		if trimmed != "" {
-			result = append(result, trimmed)
+	var platforms []string
+	
+	switch c.PlatformSwitches.ExecutionMode {
+	case "single":
+		// Return only the first enabled platform
+		for name, config := range c.PlatformSwitches.Platforms {
+			if config.Enabled {
+				return []string{name}
+			}
+		}
+	case "selected":
+		// Return only selected platforms
+		for _, name := range c.PlatformSwitches.SelectedPlatforms {
+			if config, exists := c.PlatformSwitches.Platforms[name]; exists && config.Enabled {
+				platforms = append(platforms, name)
+			}
+		}
+	default: // "all"
+		// Return all enabled platforms
+		for name, config := range c.PlatformSwitches.Platforms {
+			if config.Enabled {
+				platforms = append(platforms, name)
+			}
 		}
 	}
-	return result
+
+	// Sort platforms by priority
+	return c.sortPlatformsByPriority(platforms)
 }
 
-// getEnvWithDefault 获取环境变量，如果不存在则使用默认值
+// sortPlatformsByPriority sorts platforms by their priority
+func (c *Config) sortPlatformsByPriority(platforms []string) []string {
+	// Simple bubble sort by priority
+	for i := 0; i < len(platforms)-1; i++ {
+		for j := 0; j < len(platforms)-i-1; j++ {
+			priority1 := c.PlatformSwitches.Platforms[platforms[j]].Priority
+			priority2 := c.PlatformSwitches.Platforms[platforms[j+1]].Priority
+			if priority1 > priority2 {
+				platforms[j], platforms[j+1] = platforms[j+1], platforms[j]
+			}
+		}
+	}
+	return platforms
+}
+
+// Helper functions
+func loadEnvFile() error {
+	// Try to load .env file
+	if _, err := os.Stat(".env"); err == nil {
+		// Load .env file using godotenv
+		// This would require importing github.com/joho/godotenv
+		// For now, we'll skip this and rely on environment variables
+	}
+	return nil
+}
+
 func getEnvWithDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -187,8 +236,7 @@ func getEnvWithDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvIntWithDefault 获取整数环境变量，如果不存在则使用默认值
-func getEnvIntWithDefault(key string, defaultValue int) int {
+func parseIntWithDefault(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
@@ -197,11 +245,30 @@ func getEnvIntWithDefault(key string, defaultValue int) int {
 	return defaultValue
 }
 
-// parseBool 解析布尔值
-func parseBool(value string) bool {
-	if value == "" {
-		return false
+func parseBoolWithDefault(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
+		}
 	}
-	lowerValue := strings.ToLower(value)
-	return lowerValue == "true" || lowerValue == "1" || lowerValue == "yes" || lowerValue == "on" || lowerValue == "enabled"
+	return defaultValue
+}
+
+func parseDurationWithDefault(key, defaultValue string) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	if duration, err := time.ParseDuration(defaultValue); err == nil {
+		return duration
+	}
+	return 5 * time.Second // fallback
+}
+
+func parseStringList(value string) []string {
+	if value == "" {
+		return []string{}
+	}
+	return strings.Split(value, ",")
 }

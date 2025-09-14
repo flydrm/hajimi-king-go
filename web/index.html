@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hajimi King - 密钥管理面板</title>
+    <title>Hajimi King Go v2.0 - API Key Discovery</title>
     <style>
         * {
             margin: 0;
@@ -12,86 +12,10 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #f5f5f5;
-            color: #333;
-        }
-
-        .login-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-
-        .login-form {
-            background: white;
-            padding: 2rem;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            width: 100%;
-            max-width: 400px;
-        }
-
-        .login-form h2 {
-            text-align: center;
-            margin-bottom: 1.5rem;
+            min-height: 100vh;
             color: #333;
-        }
-
-        .login-form .form-group {
-            margin-bottom: 1rem;
-        }
-
-        .login-form label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-            color: #555;
-        }
-
-        .login-form input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 1rem;
-        }
-
-        .login-form input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
-        }
-
-        .login-form .btn {
-            width: 100%;
-            padding: 0.75rem;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .login-form .btn:hover {
-            background: #5a6fd8;
-        }
-
-        .login-error {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 0.75rem;
-            border-radius: 5px;
-            margin-bottom: 1rem;
-            text-align: center;
-        }
-
-        .main-app {
-            display: none;
         }
 
         .container {
@@ -101,217 +25,154 @@
         }
 
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem 0;
-            margin-bottom: 2rem;
-            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             text-align: center;
         }
 
         .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 2.5em;
         }
 
         .header p {
-            font-size: 1.1rem;
-            opacity: 0.9;
+            color: #7f8c8d;
+            font-size: 1.2em;
         }
 
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
+        .login-form {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            margin: 0 auto 30px;
         }
 
-        .stat-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        .login-form h2 {
             text-align: center;
-            transition: transform 0.2s;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-2px);
-        }
-
-        .stat-card h3 {
-            font-size: 2rem;
-            margin-bottom: 0.5rem;
-            color: #667eea;
-        }
-
-        .stat-card p {
-            color: #666;
-            font-weight: 500;
-        }
-
-        .controls {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 2rem;
-        }
-
-        .controls h3 {
-            margin-bottom: 1rem;
-            color: #333;
-        }
-
-        .control-group {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 1rem;
+            margin-bottom: 30px;
+            color: #2c3e50;
         }
 
         .form-group {
-            display: flex;
-            flex-direction: column;
+            margin-bottom: 20px;
         }
 
         .form-group label {
-            margin-bottom: 0.5rem;
+            display: block;
+            margin-bottom: 5px;
+            color: #2c3e50;
             font-weight: 500;
-            color: #555;
         }
 
-        .form-group input,
-        .form-group select {
-            padding: 0.75rem;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 1rem;
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
         }
 
-        .form-group input:focus,
-        .form-group select:focus {
+        .form-group input:focus {
             outline: none;
             border-color: #667eea;
-            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
         }
 
         .btn {
-            background: #667eea;
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 5px;
+            border-radius: 8px;
+            font-size: 16px;
             cursor: pointer;
-            font-size: 1rem;
-            transition: background 0.2s;
+            transition: transform 0.2s;
         }
 
         .btn:hover {
-            background: #5a6fd8;
+            transform: translateY(-2px);
         }
 
-        .btn-secondary {
-            background: #6c757d;
+        .dashboard {
+            display: none;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         }
 
-        .btn-secondary:hover {
-            background: #5a6268;
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
         }
 
-        .btn-success {
-            background: #28a745;
-        }
-
-        .btn-success:hover {
-            background: #218838;
-        }
-
-        .copy-feedback {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #28a745;
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 1rem 1.5rem;
-            border-radius: 5px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            z-index: 1000;
-            opacity: 0;
-            transform: translateY(-20px);
-            transition: all 0.3s ease;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
 
-        .copy-feedback.show {
-            opacity: 1;
-            transform: translateY(0);
+        .stat-card h3 {
+            font-size: 2em;
+            margin-bottom: 10px;
         }
 
-        .keys-container {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            overflow: hidden;
+        .stat-card p {
+            opacity: 0.9;
+            font-size: 1.1em;
         }
 
-        .keys-header {
-            background: #f8f9fa;
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid #dee2e6;
+        .keys-section {
+            margin-top: 30px;
         }
 
-        .keys-header h3 {
-            margin: 0;
-            color: #333;
+        .keys-section h3 {
+            margin-bottom: 20px;
+            color: #2c3e50;
         }
 
-        .pagination {
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-        }
-
-        .pagination button {
-            padding: 0.5rem 1rem;
-            border: 1px solid #ddd;
-            background: white;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .pagination button:hover:not(:disabled) {
-            background: #667eea;
-            color: white;
-            border-color: #667eea;
-        }
-
-        .pagination button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .pagination span {
-            margin: 0 1rem;
-            color: #666;
+        .search-bar {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 16px;
         }
 
         .keys-table {
             width: 100%;
             border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
 
         .keys-table th,
         .keys-table td {
-            padding: 1rem;
+            padding: 15px;
             text-align: left;
-            border-bottom: 1px solid #dee2e6;
+            border-bottom: 1px solid #e0e0e0;
         }
 
         .keys-table th {
             background: #f8f9fa;
             font-weight: 600;
-            color: #495057;
+            color: #2c3e50;
         }
 
         .keys-table tr:hover {
@@ -319,56 +180,74 @@
         }
 
         .key-value {
-            font-family: 'Courier New', monospace;
-            background: #f8f9fa;
-            padding: 0.25rem 0.5rem;
-            border-radius: 3px;
-            font-size: 0.9rem;
-            word-break: break-all;
-            max-width: 200px; /* 新增 */
-            white-space: nowrap; /* 新增 */
-            overflow: hidden; /* 新增 */
-            text-overflow: ellipsis; /* 新增 */
-            cursor: pointer; /* 新增 */
+            font-family: monospace;
+            background: #f1f3f4;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
         }
-        
-        .key-valid {
-            color: #28a745;
+
+        .platform-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
             font-weight: 500;
+            text-transform: uppercase;
         }
 
-        .key-rate-limited {
-            color: #ffc107;
-            font-weight: 500;
+        .platform-gemini {
+            background: #e3f2fd;
+            color: #1976d2;
         }
 
-        .repository-link {
-            color: #667eea;
-            text-decoration: none;
+        .platform-openrouter {
+            background: #f3e5f5;
+            color: #7b1fa2;
         }
 
-        .repository-link:hover {
-            text-decoration: underline;
+        .platform-siliconflow {
+            background: #e8f5e8;
+            color: #388e3c;
         }
 
-        .loading {
-            text-align: center;
-            padding: 2rem;
-            color: #666;
+        .status-valid {
+            color: #4caf50;
+            font-weight: 600;
+        }
+
+        .status-invalid {
+            color: #f44336;
+            font-weight: 600;
+        }
+
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+
+        .copy-btn:hover {
+            background: #5a6fd8;
         }
 
         .error {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 1rem;
-            border-radius: 5px;
-            margin-bottom: 1rem;
+            color: #f44336;
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
         }
 
-        .no-keys {
-            text-align: center;
-            padding: 2rem;
-            color: #666;
+        .success {
+            color: #4caf50;
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
         }
 
         @media (max-width: 768px) {
@@ -377,640 +256,201 @@
             }
             
             .header h1 {
-                font-size: 2rem;
+                font-size: 2em;
             }
             
-            .control-group {
+            .stats-grid {
                 grid-template-columns: 1fr;
             }
             
-            .keys-header .header-content {
-                flex-direction: column;
-                gap: 1rem;
-            }
-            
-            .keys-header .copy-button-container {
-                width: 100%;
-                justify-content: center;
-            }
-            
-            .keys-header .pagination {
-                width: 100%;
-                justify-content: center;
-            }
-            
             .keys-table {
-                font-size: 0.9rem;
-            }
-            
-            .keys-table th,
-            .keys-table td {
-                padding: 0.5rem;
+                font-size: 0.9em;
             }
         }
     </style>
 </head>
 <body>
-    <!-- 登录界面 -->
-    <div id="loginContainer" class="login-container">
-        <div class="login-form">
-            <h2>🔐 登录验证</h2>
-            <div id="loginError" class="login-error" style="display: none;"></div>
-            <div class="form-group">
-                <label for="authKey">访问密钥</label>
-                <input type="password" id="authKey" placeholder="请输入访问密钥...">
-            </div>
-            <button class="btn" onclick="login()">🔓 登录</button>
-        </div>
-    </div>
-
-    <!-- 主应用界面 -->
-    <div id="mainApp" class="main-app">
-        <div class="container">
+    <div class="container">
         <div class="header">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h1>🔑 Hajimi King</h1>
-                    <p>密钥抓取管理面板</p>
-                </div>
-                <button class="btn" onclick="logout()" style="background: #dc3545;">🚪 退出登录</button>
-            </div>
+            <h1>🔑 Hajimi King Go v2.0</h1>
+            <p>Multi-Platform API Key Discovery System</p>
         </div>
 
-        <div class="stats" id="stats">
-            <div class="stat-card">
-                <h3 id="totalKeys">-</h3>
-                <p>总密钥数</p>
-            </div>
-            <div class="stat-card">
-                <h3 id="validKeys">-</h3>
-                <p>有效密钥</p>
-            </div>
-            <div class="stat-card">
-                <h3 id="rateLimitedKeys">-</h3>
-                <p>限流密钥</p>
-            </div>
+        <div id="loginForm" class="login-form">
+            <h2>Login</h2>
+            <form onsubmit="login(event)">
+                <div class="form-group">
+                    <label for="username">Username:</label>
+                    <input type="text" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password:</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="btn">Login</button>
+            </form>
+            <div id="loginError" class="error" style="display: none;"></div>
         </div>
 
-        <div class="controls">
-            <h3>🔍 筛选条件</h3>
-            <div class="control-group">
-                <div class="form-group">
-                    <label for="keyType">密钥类型</label>
-                    <select id="keyType">
-                        <option value="all">全部</option>
-                        <option value="valid">有效密钥</option>
-                        <option value="rate_limited">限流密钥</option>
-                    </select>
+        <div id="dashboard" class="dashboard">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3 id="totalKeys">0</h3>
+                    <p>Total Keys Found</p>
                 </div>
-                <div class="form-group">
-                    <label for="search">搜索</label>
-                    <input type="text" id="search" placeholder="搜索密钥、仓库或文件...">
+                <div class="stat-card">
+                    <h3 id="validKeys">0</h3>
+                    <p>Valid Keys</p>
                 </div>
-                <div class="form-group">
-                    <label for="repository">仓库</label>
-                    <input type="text" id="repository" placeholder="筛选仓库...">
+                <div class="stat-card">
+                    <h3 id="rateLimitedKeys">0</h3>
+                    <p>Rate Limited</p>
                 </div>
-                <div class="form-group">
-                    <label for="pageSize">每页显示</label>
-                    <select id="pageSize">
-                        <option value="10">10</option>
-                        <option value="20" selected>20</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
-                    </select>
+                <div class="stat-card">
+                    <h3 id="platforms">0</h3>
+                    <p>Active Platforms</p>
                 </div>
             </div>
-            <div class="control-group">
-                <button class="btn" onclick="loadKeys()">🔍 搜索</button>
-                <button class="btn btn-secondary" onclick="resetFilters()">🔄 重置</button>
+
+            <div class="keys-section">
+                <h3>Discovered Keys</h3>
+                <input type="text" id="searchInput" class="search-bar" placeholder="Search keys...">
+                <table class="keys-table">
+                    <thead>
+                        <tr>
+                            <th>Key</th>
+                            <th>Platform</th>
+                            <th>Repository</th>
+                            <th>File</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="keysTableBody">
+                        <!-- Keys will be populated here -->
+                    </tbody>
+                </table>
             </div>
         </div>
-
-        <div class="keys-container">
-            <div class="keys-header">
-                <div class="header-content" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <h3>📋 密钥列表</h3>
-                    <div class="copy-button-container" style="display: flex; gap: 1rem; align-items: center;">
-                        <button class="btn btn-success" onclick="copyCurrentPageKeys()" id="copyBtn">
-                            📋 复制当前页密钥
-                        </button>
-                        <div class="pagination">
-                            <button id="prevBtn" onclick="previousPage()">上一页</button>
-                            <span id="pageInfo">第 1 页，共 1 页</span>
-                            <button id="nextBtn" onclick="nextPage()">下一页</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div id="keysContent">
-                <div class="loading">正在加载密钥数据...</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 复制成功提示 -->
-    <div id="copyFeedback" class="copy-feedback">
-        <div>✅ 密钥已复制到剪贴板</div>
-        <div style="font-size: 0.9rem; margin-top: 0.25rem;" id="copyCount"></div>
     </div>
 
     <script>
-        let currentPage = 1;
-        let totalPages = 1;
-        let totalKeys = 0;
-
-        // 页面加载时初始化
-        document.addEventListener('DOMContentLoaded', function() {
-            // 初始化复制按钮状态
-            const copyBtn = document.getElementById('copyBtn');
-            copyBtn.disabled = true;
-            copyBtn.textContent = '📋 复制当前页密钥';
-            copyBtn.style.opacity = '0.6';
-            
-            loadStats();
-            loadKeys();
-        });
-
-        // 加载统计信息
-        async function loadStats() {
-            try {
-                const response = await fetch('/api/stats');
-                const result = await response.json();
-                
-                if (result.success) {
-                    const stats = result.data;
-                    document.getElementById('totalKeys').textContent = stats.total_keys_count;
-                    document.getElementById('validKeys').textContent = stats.valid_keys_count;
-                    document.getElementById('rateLimitedKeys').textContent = stats.rate_limited_keys_count;
-                }
-            } catch (error) {
-                console.error('Failed to load stats:', error);
-            }
-        }
-
-        // 加载密钥列表
-        async function loadKeys() {
-            const keyType = document.getElementById('keyType').value;
-            const search = document.getElementById('search').value;
-            const repository = document.getElementById('repository').value;
-            const pageSize = document.getElementById('pageSize').value;
-            
-            const params = new URLSearchParams({
-                page: currentPage,
-                page_size: pageSize,
-                key_type: keyType,
-                search: search,
-                repository: repository
-            });
-            
-            const keysContent = document.getElementById('keysContent');
-            keysContent.innerHTML = '<div class="loading">正在加载密钥数据...</div>';
-            
-            try {
-                const response = await fetch(`/api/keys?${params}`);
-                const result = await response.json();
-                
-                if (result.success) {
-                    displayKeys(result.data);
-                } else {
-                    keysContent.innerHTML = `<div class="error">加载失败: ${result.message}</div>`;
-                }
-            } catch (error) {
-                keysContent.innerHTML = `<div class="error">网络错误: ${error.message}</div>`;
-            }
-        }
-
-  
-        // 上一页
-        function previousPage() {
-            if (currentPage > 1) {
-                currentPage--;
-                loadKeys();
-            }
-        }
-
-        // 下一页
-        function nextPage() {
-            if (currentPage < totalPages) {
-                currentPage++;
-                loadKeys();
-            }
-        }
-
-        // 重置筛选条件
-        function resetFilters() {
-            document.getElementById('keyType').value = 'all';
-            document.getElementById('search').value = '';
-            document.getElementById('repository').value = '';
-            document.getElementById('pageSize').value = '20';
-            currentPage = 1;
-            loadKeys();
-        }
-
-        // 定时刷新统计信息
-        setInterval(loadStats, 30000); // 每30秒刷新一次
-
-        // 认证相关变量
         let authToken = null;
 
-        // 页面加载时检查认证状态
-        document.addEventListener('DOMContentLoaded', function() {
-            checkAuth();
-        });
-
-        // 从localStorage恢复认证状态
-        function restoreAuthFromStorage() {
-            const storedToken = localStorage.getItem('auth_token');
-            const storedExpiry = localStorage.getItem('auth_token_expiry');
+        async function login(event) {
+            event.preventDefault();
             
-            if (storedToken && storedExpiry) {
-                const expiryTime = new Date(storedExpiry);
-                if (expiryTime > new Date()) {
-                    authToken = storedToken;
-                    return true;
-                } else {
-                    // 令牌已过期，清除存储
-                    localStorage.removeItem('auth_token');
-                    localStorage.removeItem('auth_token_expiry');
-                }
-            }
-            return false;
-        }
-
-        // 保存认证状态到localStorage
-        function saveAuthToStorage(token, expiresIn) {
-            const expiryTime = new Date();
-            expiryTime.setSeconds(expiryTime.getSeconds() + parseInt(expiresIn));
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
             
-            localStorage.setItem('auth_token', token);
-            localStorage.setItem('auth_token_expiry', expiryTime.toISOString());
-        }
-
-        // 清除认证状态
-        function clearAuthFromStorage() {
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('auth_token_expiry');
-        }
-
-        // 检查认证状态
-        async function checkAuth() {
-            // 先尝试从localStorage恢复认证状态
-            if (restoreAuthFromStorage()) {
-                // 验证存储的令牌是否仍然有效
-                try {
-                    const response = await fetchAPI('/api/stats');
-                    if (response.ok) {
-                        showMainApp();
-                        loadStats();
-                        loadKeys();
-                        return;
-                    } else {
-                        // 令牌无效，清除存储
-                        clearAuthFromStorage();
-                        authToken = null;
-                    }
-                } catch (error) {
-                    // 网络错误，可能是令牌无效
-                    clearAuthFromStorage();
-                    authToken = null;
-                }
-            }
-            
-            // 尝试无需认证访问
             try {
-                const response = await fetch('/api/stats');
-                if (response.ok) {
-                    showMainApp();
-                    loadStats();
-                    loadKeys();
-                } else {
-                    showLoginForm();
-                }
-            } catch (error) {
-                showLoginForm();
-            }
-        }
-
-        // 显示登录表单
-        function showLoginForm() {
-            document.getElementById('loginContainer').style.display = 'flex';
-            document.getElementById('mainApp').style.display = 'none';
-        }
-
-        // 显示主应用
-        function showMainApp() {
-            document.getElementById('loginContainer').style.display = 'none';
-            document.getElementById('mainApp').style.display = 'block';
-        }
-
-        // 登录验证
-        async function login() {
-            const authKey = document.getElementById('authKey').value;
-            const loginError = document.getElementById('loginError');
-            
-            if (!authKey) {
-                showLoginError('请输入访问密钥');
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/auth', {
+                const response = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ auth_key: authKey }),
+                    body: JSON.stringify({ username, password })
                 });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    authToken = result.data.token;
-                    
-                    // 保存到localStorage（除非是无需认证模式）
-                    if (result.data.token !== 'no-auth-required' && result.data.expires_in !== '0') {
-                        saveAuthToStorage(result.data.token, result.data.expires_in);
-                    }
-                    
-                    showMainApp();
-                    loadStats();
-                    loadKeys();
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    authToken = data.token;
+                    document.getElementById('loginForm').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'block';
+                    loadDashboard();
                 } else {
-                    showLoginError(result.message || '登录失败');
+                    showError('Invalid credentials');
                 }
             } catch (error) {
-                showLoginError('网络错误，请稍后重试');
+                showError('Login failed: ' + error.message);
             }
         }
 
-        // 显示登录错误
-        function showLoginError(message) {
-            const loginError = document.getElementById('loginError');
-            loginError.textContent = message;
-            loginError.style.display = 'block';
-            
-            // 3秒后自动隐藏错误信息
-            setTimeout(() => {
-                loginError.style.display = 'none';
-            }, 3000);
+        function showError(message) {
+            const errorDiv = document.getElementById('loginError');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
         }
 
-        // 监听回车键登录
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('authKey').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    login();
+        async function loadDashboard() {
+            try {
+                // Load stats
+                const statsResponse = await fetch('/api/stats', {
+                    headers: {
+                        'Authorization': 'Bearer ' + authToken
+                    }
+                });
+                
+                if (statsResponse.ok) {
+                    const stats = await statsResponse.json();
+                    document.getElementById('totalKeys').textContent = stats.total_keys;
+                    document.getElementById('validKeys').textContent = stats.valid_keys;
+                    document.getElementById('rateLimitedKeys').textContent = stats.rate_limited_keys;
+                    document.getElementById('platforms').textContent = Object.keys(stats.platforms).length;
                 }
+
+                // Load keys
+                const keysResponse = await fetch('/api/keys', {
+                    headers: {
+                        'Authorization': 'Bearer ' + authToken
+                    }
+                });
+                
+                if (keysResponse.ok) {
+                    const data = await keysResponse.json();
+                    displayKeys(data.keys);
+                }
+            } catch (error) {
+                console.error('Failed to load dashboard:', error);
+            }
+        }
+
+        function displayKeys(keys) {
+            const tbody = document.getElementById('keysTableBody');
+            tbody.innerHTML = '';
+            
+            keys.forEach(key => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><span class="key-value">${key.key}</span></td>
+                    <td><span class="platform-badge platform-${key.platform}">${key.platform}</span></td>
+                    <td>${key.repository}</td>
+                    <td>${key.file_path}</td>
+                    <td><span class="status-${key.is_valid ? 'valid' : 'invalid'}">${key.is_valid ? 'Valid' : 'Invalid'}</span></td>
+                    <td><button class="copy-btn" onclick="copyKey('${key.key}')">Copy</button></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function copyKey(key) {
+            navigator.clipboard.writeText(key).then(() => {
+                // Show success message
+                const message = document.createElement('div');
+                message.className = 'success';
+                message.textContent = 'Key copied to clipboard!';
+                document.body.appendChild(message);
+                setTimeout(() => message.remove(), 2000);
+            });
+        }
+
+        // Search functionality
+        document.getElementById('searchInput').addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase();
+            const rows = document.querySelectorAll('#keysTableBody tr');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(searchTerm) ? '' : 'none';
             });
         });
 
-        // 修改fetchAPI函数，添加认证头
-        async function fetchAPI(url, options = {}) {
-            const defaultOptions = {
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            };
-
-            if (authToken && authToken !== 'no-auth-required') {
-                defaultOptions.headers['Authorization'] = `Bearer ${authToken}`;
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            if (authToken) {
+                loadDashboard();
             }
-
-            const finalOptions = {
-                ...defaultOptions,
-                ...options,
-                headers: {
-                    ...defaultOptions.headers,
-                    ...(options.headers || {}),
-                },
-            };
-
-            return fetch(url, finalOptions);
-        }
-
-        // 修改loadStats函数使用fetchAPI
-        async function loadStats() {
-            try {
-                const response = await fetchAPI('/api/stats');
-                const result = await response.json();
-                
-                if (result.success) {
-                    const stats = result.data;
-                    document.getElementById('totalKeys').textContent = stats.total_keys_count;
-                    document.getElementById('validKeys').textContent = stats.valid_keys_count;
-                    document.getElementById('rateLimitedKeys').textContent = stats.rate_limited_keys_count;
-                }
-            } catch (error) {
-                console.error('Failed to load stats:', error);
-            }
-        }
-
-        // 修改loadKeys函数使用fetchAPI
-        async function loadKeys() {
-            const keyType = document.getElementById('keyType').value;
-            const search = document.getElementById('search').value;
-            const repository = document.getElementById('repository').value;
-            const pageSize = document.getElementById('pageSize').value;
-            
-            const params = new URLSearchParams({
-                page: currentPage,
-                page_size: pageSize,
-                key_type: keyType,
-                search: search,
-                repository: repository
-            });
-            
-            const keysContent = document.getElementById('keysContent');
-            keysContent.innerHTML = '<div class="loading">正在加载密钥数据...</div>';
-            
-            try {
-                const response = await fetchAPI(`/api/keys?${params}`);
-                const result = await response.json();
-                
-                if (result.success) {
-                    displayKeys(result.data);
-                } else {
-                    keysContent.innerHTML = `<div class="error">加载失败: ${result.message}</div>`;
-                }
-            } catch (error) {
-                keysContent.innerHTML = `<div class="error">网络错误: ${error.message}</div>`;
-            }
-        }
-
-        // 添加退出登录功能
-        function logout() {
-            authToken = null;
-            clearAuthFromStorage();
-            showLoginForm();
-            document.getElementById('authKey').value = '';
-        }
-
-        // 当前页面密钥数据
-        let currentKeysData = [];
-
-        // 新增：复制单个密钥
-        async function copyKey(event, key) {
-            event.stopPropagation(); // 阻止事件冒泡
-            try {
-                // 优先使用现代的 Clipboard API
-                await navigator.clipboard.writeText(key);
-                showCopyFeedback('单个密钥已复制', 1);
-            } catch (err) {
-                // 如果 Clipboard API 不可用或失败，使用传统方法
-                copyToClipboardFallback(key, 1);
-            }
-        }
-
-        // 复制当前页面密钥
-        async function copyCurrentPageKeys() {
-            if (!currentKeysData || currentKeysData.length === 0) {
-                showCopyFeedback('当前页面没有密钥可复制', 0);
-                return;
-            }
-
-            // 提取所有密钥，每行一个
-            const keysText = currentKeysData.map(key => key.key).join('\n');
-            
-            try {
-                // 使用现代的 Clipboard API
-                await navigator.clipboard.writeText(keysText);
-                showCopyFeedback('密钥已复制到剪贴板', currentKeysData.length);
-            } catch (err) {
-                // 如果 Clipboard API 不可用，使用传统方法
-                copyToClipboardFallback(keysText);
-            }
-        }
-
-        // 传统复制方法（兼容性更好）
-        function copyToClipboardFallback(text, count) {
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-999999px';
-            textArea.style.top = '-999999px';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-
-            try {
-                document.execCommand('copy');
-                const message = count === 1 ? '单个密钥已复制' : '密钥已复制到剪贴板';
-                showCopyFeedback(message, count);
-            } catch (err) {
-                showCopyFeedback('复制失败，请手动复制', 0, true);
-            }
-
-            document.body.removeChild(textArea);
-        }
-
-        // 显示复制反馈
-        function showCopyFeedback(message, count, isError = false) {
-            const feedback = document.getElementById('copyFeedback');
-            const copyCount = document.getElementById('copyCount');
-            
-            feedback.querySelector('div:first-child').textContent = isError ? '❌ ' + message : '✅ ' + message;
-            
-            if (count > 0) {
-                copyCount.textContent = `共复制 ${count} 个密钥`;
-                copyCount.style.display = 'block';
-            } else {
-                copyCount.style.display = 'none';
-            }
-
-            if (isError) {
-                feedback.style.background = '#dc3545';
-            } else {
-                feedback.style.background = '#28a745';
-            }
-
-            feedback.classList.add('show');
-
-            // 3秒后自动隐藏
-            setTimeout(() => {
-                feedback.classList.remove('show');
-            }, 3000);
-        }
-
-        // 修改 displayKeys 函数，保存当前页面数据
-        function displayKeys(data) {
-            const keysContent = document.getElementById('keysContent');
-            
-            // 保存当前页面数据供复制功能使用
-            currentKeysData = data.keys;
-            
-            // 更新复制按钮状态
-            const copyBtn = document.getElementById('copyBtn');
-            if (data.keys.length === 0) {
-                copyBtn.disabled = true;
-                copyBtn.textContent = '📋 暂无密钥可复制';
-                copyBtn.style.opacity = '0.6';
-            } else {
-                copyBtn.disabled = false;
-                copyBtn.textContent = `📋 复制当前页密钥 (${data.keys.length}个)`;
-                copyBtn.style.opacity = '1';
-            }
-            
-            if (data.keys.length === 0) {
-                keysContent.innerHTML = '<div class="no-keys">没有找到符合条件的密钥</div>';
-                return;
-            }
-            
-            currentPage = data.page;
-            totalPages = data.total_pages;
-            totalKeys = data.total;
-            
-            // 更新分页信息
-            document.getElementById('pageInfo').textContent = `第 ${currentPage} 页，共 ${totalPages} 页`;
-            document.getElementById('prevBtn').disabled = currentPage <= 1;
-            document.getElementById('nextBtn').disabled = currentPage >= totalPages;
-            
-            // 生成表格
-            let tableHTML = `
-                <table class="keys-table">
-                    <thead>
-                        <tr>
-                            <th>密钥</th>
-                            <th>类型</th>
-                            <th>仓库</th>
-                            <th>文件路径</th>
-                            <th>发现时间</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-            
-            data.keys.forEach(key => {
-                const keyClass = key.rate_limited ? 'key-rate-limited' : 'key-valid';
-                const keyType = key.rate_limited ? '限流' : '有效';
-                const foundTime = new Date(key.found_at).toLocaleString('zh-CN');
-                
-                tableHTML += `
-                    <tr>
-                        <td>
-                            <div class="key-value" title="点击复制" onclick="copyKey(event, '${key.key}')">${key.key}</div>
-                        </td>
-                        <td>
-                            <span class="${keyClass}">${keyType}</span>
-                        </td>
-                        <td>
-                            <a href="${key.file_url}" target="_blank" class="repository-link">
-                                ${key.repository}
-                            </a>
-                        </td>
-                        <td>${key.file_path}</td>
-                        <td>${foundTime}</td>
-                    </tr>
-                `;
-            });
-            
-            tableHTML += `
-                    </tbody>
-                </table>
-            `;
-            
-            keysContent.innerHTML = tableHTML;
-        }
+        }, 30000);
     </script>
 </body>
 </html>

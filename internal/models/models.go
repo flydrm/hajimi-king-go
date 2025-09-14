@@ -1,58 +1,175 @@
 package models
 
-import "time"
+import (
+	"time"
+)
 
-// Checkpoint 用于跟踪扫描进度的检查点结构
-// 这个结构体保存了程序的运行状态，支持断点续传功能
+// Checkpoint represents a checkpoint for incremental scanning
 type Checkpoint struct {
-	LastScanTime     string   `json:"last_scan_time"`     // 最后扫描时间，用于增量扫描
-	ScannedSHAs      []string `json:"scanned_shas"`       // 已扫描的文件SHA列表，避免重复处理
-	ProcessedQueries []string `json:"processed_queries"`  // 已处理的查询列表，避免重复查询
-	WaitSendBalancer []string `json:"wait_send_balancer"` // 等待发送到Balancer的密钥队列
-	WaitSendGPTLoad  []string `json:"wait_send_gpt_load"`  // 等待发送到GPT Load的密钥队列
+	LastScanTime time.Time `json:"last_scan_time"`
+	ProcessedFiles map[string]bool `json:"processed_files"`
+	TotalFiles   int       `json:"total_files"`
+	TotalKeys    int       `json:"total_keys"`
+	ValidKeys    int       `json:"valid_keys"`
+	RateLimitedKeys int    `json:"rate_limited_keys"`
 }
 
-// GitHubSearchResult 表示GitHub搜索结果
-// 包含从GitHub API返回的搜索结果数据
+// GitHubSearchResult represents the result of a GitHub search
 type GitHubSearchResult struct {
-	TotalCount       int               `json:"total_count"`        // 搜索结果总数
-	IncompleteResults bool             `json:"incomplete_results"` // 结果是否完整（可能因为分页限制）
-	Items            []GitHubSearchItem `json:"items"`             // 搜索结果项列表
+	TotalCount int               `json:"total_count"`
+	Items      []GitHubSearchItem `json:"items"`
 }
 
-// GitHubSearchItem 表示GitHub搜索的单个结果项
-// 包含了单个代码文件的详细信息
+// GitHubSearchItem represents a single item from GitHub search
 type GitHubSearchItem struct {
-	SHA        string           `json:"sha"`        // 文件的SHA哈希值，用于唯一标识
-	Path       string           `json:"path"`       // 文件在仓库中的路径
-	HTMLURL    string           `json:"html_url"`   // 文件的HTML页面URL
-	Repository GitHubRepository `json:"repository"` // 所属仓库信息
+	Name        string           `json:"name"`
+	Path        string           `json:"path"`
+	URL         string           `json:"url"`
+	Repository  GitHubRepository `json:"repository"`
+	TextMatches []TextMatch      `json:"text_matches"`
+	Score       float64          `json:"score"`
 }
 
-// GitHubRepository 表示GitHub仓库信息
-// 包含了仓库的基本信息
+// GitHubRepository represents a GitHub repository
 type GitHubRepository struct {
-	FullName  string `json:"full_name"` // 仓库完整名称（用户名/仓库名）
-	PushedAt  string `json:"pushed_at"` // 最后推送时间，用于过滤旧仓库
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	FullName    string `json:"full_name"`
+	Description string `json:"description"`
+	URL         string `json:"url"`
+	HTMLURL     string `json:"html_url"`
+	CloneURL    string `json:"clone_url"`
+	Language    string `json:"language"`
+	Size        int    `json:"size"`
+	Stars       int    `json:"stargazers_count"`
+	Forks       int    `json:"forks_count"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
-// KeyInfo 表示找到的密钥信息
-// 这个结构体用于存储发现的API密钥及其相关信息
+// TextMatch represents a text match in search results
+type TextMatch struct {
+	ObjectURL  string `json:"object_url"`
+	ObjectType string `json:"object_type"`
+	Property   string `json:"property"`
+	Fragment   string `json:"fragment"`
+	Matches    []Match `json:"matches"`
+}
+
+// Match represents a specific match within text
+type Match struct {
+	Text       string `json:"text"`
+	Indices    []int  `json:"indices"`
+}
+
+// KeyInfo represents information about a discovered key
 type KeyInfo struct {
-	Key        string    `json:"key"`         // 密钥内容
-	Valid      bool      `json:"valid"`       // 密钥是否有效（通过验证）
-	RateLimited bool     `json:"rate_limited"` // 密钥是否被限流
-	Repository string    `json:"repository"`  // 发现密钥的仓库名称
-	FilePath   string    `json:"file_path"`   // 发现密钥的文件路径
-	FileURL    string    `json:"file_url"`    // 发现密钥的文件URL
-	FoundAt    time.Time `json:"found_at"`    // 发现密钥的时间
+	Key         string    `json:"key"`
+	Platform    string    `json:"platform"`
+	Repository  string    `json:"repository"`
+	FilePath    string    `json:"file_path"`
+	FileURL     string    `json:"file_url"`
+	LineNumber  int       `json:"line_number"`
+	Context     string    `json:"context"`
+	Confidence  float64   `json:"confidence"`
+	RiskLevel   string    `json:"risk_level"`
+	IsValid     bool      `json:"is_valid"`
+	IsPlaceholder bool    `json:"is_placeholder"`
+	IsTestKey   bool      `json:"is_test_key"`
+	DiscoveredAt time.Time `json:"discovered_at"`
+	ValidatedAt  *time.Time `json:"validated_at,omitempty"`
 }
 
-// SkipStats 跳过统计信息
-// 用于跟踪各种原因跳过的文件数量统计
+// SkipStats represents statistics about skipped items
 type SkipStats struct {
-	TimeFilter   int `json:"time_filter"`   // 因时间过滤跳过的文件数
-	SHADuplicate int `json:"sha_duplicate"` // 因SHA重复跳过的文件数
-	AgeFilter    int `json:"age_filter"`    // 因仓库年龄过滤跳过的文件数
-	DocFilter    int `json:"doc_filter"`    // 因文档类型过滤跳过的文件数
+	TotalSkipped    int `json:"total_skipped"`
+	DuplicateSkipped int `json:"duplicate_skipped"`
+	SizeSkipped     int `json:"size_skipped"`
+	ExtensionSkipped int `json:"extension_skipped"`
+	PathSkipped     int `json:"path_skipped"`
+}
+
+// SystemMetrics represents system performance metrics
+type SystemMetrics struct {
+	// Processing metrics
+	ProcessedFiles   int64   `json:"processed_files"`
+	ProcessedKeys    int64   `json:"processed_keys"`
+	ValidKeys        int64   `json:"valid_keys"`
+	RateLimitedKeys  int64   `json:"rate_limited_keys"`
+	
+	// Performance metrics
+	ThroughputKeysPerSecond float64 `json:"throughput_keys_per_second"`
+	AverageResponseTime     float64 `json:"average_response_time"`
+	MemoryUsageMB          float64 `json:"memory_usage_mb"`
+	
+	// Cache metrics
+	CacheHitRate           float64 `json:"cache_hit_rate"`
+	CacheMissRate          float64 `json:"cache_miss_rate"`
+	
+	// Detection metrics
+	DetectionRate          float64 `json:"detection_rate"`
+	FalsePositiveRate      float64 `json:"false_positive_rate"`
+	
+	// Worker pool metrics
+	ActiveWorkers          int     `json:"active_workers"`
+	QueueSize              int     `json:"queue_size"`
+	TasksCompleted         int64   `json:"tasks_completed"`
+	TasksFailed            int64   `json:"tasks_failed"`
+	
+	// Platform metrics
+	PlatformMetrics        map[string]PlatformMetrics `json:"platform_metrics"`
+	
+	// Timestamps
+	StartTime              time.Time `json:"start_time"`
+	LastUpdateTime         time.Time `json:"last_update_time"`
+}
+
+// PlatformMetrics represents metrics for a specific platform
+type PlatformMetrics struct {
+	PlatformName    string  `json:"platform_name"`
+	KeysFound       int64   `json:"keys_found"`
+	ValidKeys       int64   `json:"valid_keys"`
+	InvalidKeys     int64   `json:"invalid_keys"`
+	RateLimitedKeys int64   `json:"rate_limited_keys"`
+	AverageResponseTime float64 `json:"average_response_time"`
+	SuccessRate     float64 `json:"success_rate"`
+	LastProcessed   time.Time `json:"last_processed"`
+}
+
+// QueryTask represents a task for processing a search query
+type QueryTask struct {
+	ID          string
+	Platform    string
+	Query       string
+	Priority    int
+	HajimiKing  *OptimizedHajimiKing
+}
+
+// QueryResult represents the result of a query task
+type QueryResult struct {
+	TaskID      string
+	Platform    string
+	Query       string
+	Items       []GitHubSearchItem
+	Error       error
+	ProcessedAt time.Time
+}
+
+// ValidationTask represents a task for validating a key
+type ValidationTask struct {
+	ID          string
+	Platform    string
+	Key         string
+	Priority    int
+	HajimiKing  *OptimizedHajimiKing
+}
+
+// ValidationResult represents the result of a validation task
+type ValidationResult struct {
+	TaskID      string
+	Platform    string
+	Key         string
+	IsValid     bool
+	Error       error
+	ProcessedAt time.Time
 }

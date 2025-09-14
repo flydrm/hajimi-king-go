@@ -1,562 +1,607 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
-	"math/rand"
-	"net/http"
+	"log"
 	"os"
 	"os/signal"
-	"regexp"
-	"strings"
+	"sync"
 	"syscall"
 	"time"
 
-	"github.com/google/generative-ai-go/genai"
-	"golang.org/x/net/context"
-	"google.golang.org/api/option"
-
-	"hajimi-king-go/internal/api"
-	"hajimi-king-go/internal/config"
-	"hajimi-king-go/internal/filemanager"
-	"hajimi-king-go/internal/github"
-	"hajimi-king-go/internal/logger"
-	"hajimi-king-go/internal/models"
-	"hajimi-king-go/internal/syncutils"
+	"hajimi-king-go-v2/internal/cache"
+	"hajimi-king-go-v2/internal/concurrent"
+	"hajimi-king-go-v2/internal/config"
+	"hajimi-king-go-v2/internal/detection"
+	"hajimi-king-go-v2/internal/filemanager"
+	"hajimi-king-go-v2/internal/github"
+	"hajimi-king-go-v2/internal/logger"
+	"hajimi-king-go-v2/internal/metrics"
+	"hajimi-king-go-v2/internal/models"
+	"hajimi-king-go-v2/internal/platform"
+	"hajimi-king-go-v2/internal/syncutils"
 )
 
-var ()
-
-// HajimiKing 主应用结构
-type HajimiKing struct {
-	config               *config.Config
-	logger               *logger.Logger
-	githubClient         *github.Client
-	fileManager          *filemanager.FileManager
-	syncUtils            *syncutils.SyncUtils
-	apiServer            *api.APIServer
-	checkpoint           *models.Checkpoint
-	skipStats            map[string]int
-	totalKeysFound       int
-	totalRateLimitedKeys int
-
-	// 性能优化：批量处理
-	keyValidationBuffer chan string
-	// 性能优化：缓存
-	compiledRegex *regexp.Regexp
+// OptimizedHajimiKing represents the optimized main application
+type OptimizedHajimiKing struct {
+	config           *config.Config
+	logger           *logger.Logger
+	workerPool       *concurrent.WorkerPool
+	cacheManager     *cache.MultiLevelCache
+	smartDetector    *detection.SmartKeyDetector
+	platformManager  *platform.PlatformManager
+	githubClient     *github.Client
+	fileManager      *filemanager.FileManager
+	syncUtils        *syncutils.SyncUtils
+	metrics          *metrics.SystemMetrics
+	totalKeysFound   int64
+	totalRateLimited int64
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
-// NewHajimiKing 创建HajimiKing实例
-func NewHajimiKing() *HajimiKing {
-	// 加载配置
+// NewOptimizedHajimiKing creates a new optimized HajimiKing instance
+func NewOptimizedHajimiKing() (*OptimizedHajimiKing, error) {
+	// Load configuration
 	cfg := config.LoadConfig()
 
-	// 初始化日志
-	log := logger.InitLogger()
-
-	// 创建GitHub客户端
-	githubClient := github.NewClient(cfg.GitHubTokens)
-
-	// 创建文件管理器
-	fileManager := filemanager.NewFileManager(cfg)
-
-	// 加载检查点
-	checkpoint, err := fileManager.LoadCheckpoint()
+	// Initialize logger
+	logger, err := logger.NewLogger(logger.InfoLevel, "logs/hajimi-king.log")
 	if err != nil {
-		log.Errorf("❌ Failed to load checkpoint: %v", err)
-		// 即使加载失败，也创建一个空的checkpoint继续
-		checkpoint = &models.Checkpoint{
-			WaitSendBalancer: []string{},
-			WaitSendGPTLoad:  []string{},
-			ScannedSHAs:      []string{},
-			ProcessedQueries: []string{},
+		return nil, fmt.Errorf("failed to initialize logger: %w", err)
+	}
+
+	// Initialize cache manager
+	cacheConfig := &cache.CacheConfig{
+		L1MaxSize:       cfg.CacheConfig.L1MaxSize,
+		L1TTL:           cfg.CacheConfig.L1TTL,
+		L2TTL:           cfg.CacheConfig.L2TTL,
+		L3TTL:           cfg.CacheConfig.L3TTL,
+		EnableL3:        cfg.CacheConfig.EnableL3,
+		CleanupInterval: cfg.CacheConfig.CleanupInterval,
+		L2Path:          "./cache/l2",
+		L3RedisURL:      "redis://localhost:6379",
+	}
+
+	cacheManager, err := cache.NewMultiLevelCache(cacheConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize cache manager: %w", err)
+	}
+
+	// Initialize smart detector
+	smartDetector := detection.NewSmartKeyDetector()
+
+	// Initialize platform manager
+	platformManager := platform.NewPlatformManager()
+
+	// Initialize GitHub client
+	githubClient, err := github.NewClient(cfg.GitHubToken, cfg.GitHubProxy, cfg.GitHubBaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize GitHub client: %w", err)
+	}
+
+	// Initialize file manager
+	fileManager, err := filemanager.NewFileManager(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize file manager: %w", err)
+	}
+
+	// Initialize sync utils
+	syncUtils, err := syncutils.NewSyncUtils(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize sync utils: %w", err)
+	}
+
+	// Initialize metrics
+	systemMetrics := metrics.NewSystemMetrics()
+
+	// Create context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	hk := &OptimizedHajimiKing{
+		config:          cfg,
+		logger:          logger,
+		cacheManager:    cacheManager,
+		smartDetector:   smartDetector,
+		platformManager: platformManager,
+		githubClient:    githubClient,
+		fileManager:     fileManager,
+		syncUtils:       syncUtils,
+		metrics:         systemMetrics,
+		ctx:             ctx,
+		cancel:          cancel,
+	}
+
+	// Initialize platforms
+	if err := hk.initializePlatforms(); err != nil {
+		return nil, fmt.Errorf("failed to initialize platforms: %w", err)
+	}
+
+	// Initialize worker pool
+	hk.workerPool = concurrent.NewWorkerPool(cfg.WorkerPoolSize)
+
+	return hk, nil
+}
+
+// initializePlatforms initializes all platforms
+func (hk *OptimizedHajimiKing) initializePlatforms() error {
+	// Initialize Gemini platform
+	if hk.config.GeminiAPIKey != "" {
+		geminiPlatform, err := platform.NewGeminiPlatform(hk.config.GeminiAPIKey)
+		if err != nil {
+			hk.logger.Warn("Failed to initialize Gemini platform", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			if err := hk.platformManager.RegisterPlatform(geminiPlatform); err != nil {
+				hk.logger.Warn("Failed to register Gemini platform", map[string]interface{}{
+					"error": err.Error(),
+				})
+			}
 		}
 	}
 
-	// 创建同步工具
-	syncUtils := syncutils.NewSyncUtils(cfg, checkpoint, fileManager)
-
-	// 创建API服务器
-	var apiServer *api.APIServer
-	if cfg.APIEnabled {
-		apiServer = api.NewAPIServer(cfg, fileManager)
-	}
-
-	// 创建优化后的实例
-	hk := &HajimiKing{
-		config:       cfg,
-		logger:       log,
-		githubClient: githubClient,
-		fileManager:  fileManager,
-		syncUtils:    syncUtils,
-		apiServer:    apiServer,
-		checkpoint:   checkpoint,
-		skipStats: map[string]int{
-			"time_filter":   0,
-			"sha_duplicate": 0,
-			"age_filter":    0,
-			"doc_filter":    0,
-		},
-		// 初始化批量处理缓冲区
-		keyValidationBuffer: make(chan string, 100),
-		// 预编译正则表达式
-		compiledRegex: regexp.MustCompile(`(AIzaSy[A-Za-z0-9\-_]{33})`),
-	}
-
-	// 启动批量验证协程
-	go hk.keyValidationWorker()
-
-	return hk
-}
-
-// Run 运行应用
-func (hk *HajimiKing) Run() error {
-	// 记录系统启动信息
-	hk.logger.LogSystemStartup()
-
-	// 1. 检查配置
-	if !hk.config.Check() {
-		hk.logger.Info("❌ Config check failed. Exiting...")
-		return fmt.Errorf("config check failed")
-	}
-
-	// 2. 检查文件管理器
-	if !hk.fileManager.Check() {
-		hk.logger.Error("❌ FileManager check failed. Exiting...")
-		return fmt.Errorf("file manager check failed")
-	}
-
-	// 4. 显示同步工具状态
-	if hk.syncUtils.IsBalancerEnabled() || hk.syncUtils.IsGPTLoadEnabled() {
-		hk.logger.Info("🔗 SyncUtils ready for async key syncing")
-	}
-
-	// 显示队列状态
-	balancerQueueCount, gptLoadQueueCount := hk.syncUtils.GetQueueStatus()
-	hk.logger.Infof("📊 Queue status - Balancer: %d, GPT Load: %d", balancerQueueCount, gptLoadQueueCount)
-
-	// 5.5 显示API服务器状态
-	if hk.apiServer != nil {
-		hk.logger.Infof("🌐 API server enabled on port %d", hk.config.APIPort)
-	} else {
-		hk.logger.Infof("🌐 API server disabled")
-	}
-
-	// 5. 显示系统信息
-	searchQueries := hk.fileManager.GetSearchQueries()
-	hk.logger.Info("📋 SYSTEM INFORMATION:")
-	hk.logger.Infof("🔑 GitHub tokens: %d configured", len(hk.config.GitHubTokens))
-	hk.logger.Infof("🔍 Search queries: %d loaded", len(searchQueries))
-	hk.logger.Infof("📅 Date filter: %d days", hk.config.DateRangeDays)
-	if len(hk.config.ProxyList) > 0 {
-		hk.logger.Infof("🌐 Proxy: %d proxies configured", len(hk.config.ProxyList))
-	}
-
-	if hk.checkpoint.LastScanTime != "" {
-		hk.logger.Info("💾 Checkpoint found - Incremental scan mode")
-		hk.logger.Infof("   Last scan: %s", hk.checkpoint.LastScanTime)
-		hk.logger.Infof("   Scanned files: %d", len(hk.checkpoint.ScannedSHAs))
-		hk.logger.Infof("   Processed queries: %d", len(hk.checkpoint.ProcessedQueries))
-	} else {
-		hk.logger.Info("💾 No checkpoint - Full scan mode")
-	}
-
-	hk.logger.LogSystemReady()
-
-	// 启动同步服务
-	hk.syncUtils.Start()
-
-	// 启动API服务器
-	if hk.apiServer != nil {
-		go func() {
-			hk.logger.Infof("🌐 Starting API server on port %d", hk.config.APIPort)
-			if err := hk.apiServer.Start(); err != nil && err != http.ErrServerClosed {
-				hk.logger.Errorf("❌ API server error: %v", err)
+	// Initialize OpenRouter platform
+	if hk.config.OpenRouterAPIKey != "" {
+		openrouterPlatform, err := platform.NewOpenRouterPlatform(hk.config.OpenRouterAPIKey)
+		if err != nil {
+			hk.logger.Warn("Failed to initialize OpenRouter platform", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			if err := hk.platformManager.RegisterPlatform(openrouterPlatform); err != nil {
+				hk.logger.Warn("Failed to register OpenRouter platform", map[string]interface{}{
+					"error": err.Error(),
+				})
 			}
-		}()
+		}
 	}
 
-	// 设置信号处理
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// 在goroutine中运行主循环
-	go func() {
-		hk.mainLoop()
-	}()
-
-	// 等待信号
-	<-sigChan
-	hk.logger.Info("🛑 接收到终止信号，正在关闭程序...")
-
-	// 执行清理操作，传递实际的统计信息
-	hk.handleShutdown(hk.totalKeysFound, hk.totalRateLimitedKeys)
+	// Initialize SiliconFlow platform
+	if hk.config.SiliconFlowAPIKey != "" {
+		siliconflowPlatform, err := platform.NewSiliconFlowPlatform(hk.config.SiliconFlowAPIKey)
+		if err != nil {
+			hk.logger.Warn("Failed to initialize SiliconFlow platform", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			if err := hk.platformManager.RegisterPlatform(siliconflowPlatform); err != nil {
+				hk.logger.Warn("Failed to register SiliconFlow platform", map[string]interface{}{
+					"error": err.Error(),
+				})
+			}
+		}
+	}
 
 	return nil
 }
 
-// mainLoop 主循环
-func (hk *HajimiKing) mainLoop() {
-	hk.totalKeysFound = 0
-	hk.totalRateLimitedKeys = 0
-	loopCount := 0
+// Run starts the optimized HajimiKing application
+func (hk *OptimizedHajimiKing) Run() error {
+	hk.logger.Info("Starting Hajimi King Go v2.0", map[string]interface{}{
+		"version": "2.0.0",
+		"platforms": hk.platformManager.GetPlatformNames(),
+	})
 
-	searchQueries := hk.fileManager.GetSearchQueries()
+	// Start worker pool
+	if err := hk.workerPool.Start(); err != nil {
+		return fmt.Errorf("failed to start worker pool: %w", err)
+	}
+	defer hk.workerPool.Stop()
+
+	// Start result processing goroutine
+	go hk.processResults()
+
+	// Start main processing loop
+	go hk.optimizedMainLoop()
+
+	// Wait for shutdown signal
+	hk.waitForShutdown()
+
+	return nil
+}
+
+// optimizedMainLoop runs the optimized main processing loop
+func (hk *OptimizedHajimiKing) optimizedMainLoop() {
+	hk.logger.Info("Starting optimized main loop")
+
+	enabledPlatforms := hk.config.GetEnabledPlatforms()
+	if len(enabledPlatforms) == 0 {
+		hk.logger.Warn("No platforms enabled, exiting")
+		return
+	}
+
+	hk.logger.Info("Enabled platforms", map[string]interface{}{
+		"platforms": enabledPlatforms,
+	})
+
+	loopCount := 0
+	ticker := time.NewTicker(hk.config.ScanInterval)
+	defer ticker.Stop()
 
 	for {
-		// 主循环逻辑
-		loopCount++
-		hk.logger.LogLoopStart(loopCount)
+		select {
+		case <-hk.ctx.Done():
+			hk.logger.Info("Main loop stopped")
+			return
+		case <-ticker.C:
+			loopCount++
+			hk.logger.Debug("Starting scan cycle", map[string]interface{}{
+				"cycle": loopCount,
+			})
 
-		queryCount := 0
-		loopProcessedFiles := 0
-		hk.resetSkipStats()
-
-		for i, query := range searchQueries {
-			normalizedQuery := hk.fileManager.NormalizeQuery(query)
-			if contains(hk.checkpoint.ProcessedQueries, normalizedQuery) {
-				hk.logger.Infof("🔍 Skipping already processed query: [%s],index:#%d", query, i+1)
-				continue
+			// Process platforms concurrently
+			var wg sync.WaitGroup
+			for _, platformName := range enabledPlatforms {
+				wg.Add(1)
+				go func(platform string) {
+					defer wg.Done()
+					hk.processPlatformConcurrently(platform, loopCount)
+				}(platformName)
 			}
+			wg.Wait()
 
-			result, err := hk.githubClient.SearchForKeys(query)
-			if err != nil {
-				hk.logger.Errorf("❌ Query %d/%d failed: %v", i+1, len(searchQueries), err)
-				continue
-			}
-
-			if result != nil && len(result.Items) > 0 {
-				queryValidKeys := 0
-				queryRateLimitedKeys := 0
-				queryProcessed := 0
-
-				for itemIndex, item := range result.Items {
-					// 每50个item保存checkpoint并显示进度（减少I/O操作）
-					if itemIndex > 0 && itemIndex%50 == 0 {
-						hk.logger.Infof("📈 Progress: %d/%d | query: %s | current valid: %d | current rate limited: %d | total valid: %d | total rate limited: %d",
-							itemIndex, len(result.Items), query, queryValidKeys, queryRateLimitedKeys, hk.totalKeysFound, hk.totalRateLimitedKeys)
-						hk.fileManager.SaveCheckpoint(hk.checkpoint)
-						hk.fileManager.UpdateDynamicFilenames()
-					}
-
-					// 检查是否应该跳过此item
-					if shouldSkip, reason := hk.shouldSkipItem(item); shouldSkip {
-						hk.logger.Infof("🚫 Skipping item,name: %s,index:%d - reason: %s", strings.ToLower(item.Path), itemIndex+1, reason)
-						continue
-					}
-
-					// 处理单个item
-					validCount, rateLimitedCount := hk.processItem(item)
-
-					queryValidKeys += validCount
-					queryRateLimitedKeys += rateLimitedCount
-					queryProcessed += 1
-
-					// 记录已扫描的SHA - 优化内存使用
-					if len(hk.checkpoint.ScannedSHAs) > 10000 {
-						// 保留最近的5000个SHA
-						hk.checkpoint.ScannedSHAs = hk.checkpoint.ScannedSHAs[len(hk.checkpoint.ScannedSHAs)-5000:]
-					}
-					hk.checkpoint.ScannedSHAs = append(hk.checkpoint.ScannedSHAs, item.SHA)
-					loopProcessedFiles += 1
-				}
-
-				hk.totalKeysFound += queryValidKeys
-				hk.totalRateLimitedKeys += queryRateLimitedKeys
-
-				if queryProcessed > 0 {
-					hk.logger.LogQueryProgress(i+1, len(searchQueries), queryProcessed, queryValidKeys, queryRateLimitedKeys)
-				} else {
-					hk.logger.Infof("⏭️ Query %d/%d complete - All items skipped", i+1, len(searchQueries))
-				}
-
-				hk.logger.LogSkipStats(hk.skipStats)
-			} else {
-				hk.logger.Infof("📭 Query %d/%d - No items found", i+1, len(searchQueries))
-			}
-
-			hk.checkpoint.ProcessedQueries = append(hk.checkpoint.ProcessedQueries, normalizedQuery)
-			queryCount++
-
-			hk.checkpoint.LastScanTime = time.Now().Format(time.RFC3339)
-			hk.fileManager.SaveCheckpoint(hk.checkpoint)
-			hk.fileManager.UpdateDynamicFilenames()
-
-			if queryCount%3 == 0 {
-				hk.logger.Infof("⏸️ Processed %d queries, taking a break...", queryCount)
-				time.Sleep(500 * time.Millisecond)
-			}
+			// Update metrics
+			hk.updateMetrics()
 		}
-
-		hk.logger.LogLoopComplete(loopCount, loopProcessedFiles, hk.totalKeysFound, hk.totalRateLimitedKeys)
-
-		hk.logger.Infof("💤 Sleeping for 5 seconds...")
-		time.Sleep(5 * time.Second)
 	}
 }
 
-// processItem 处理单个GitHub搜索结果项
-func (hk *HajimiKing) processItem(item models.GitHubSearchItem) (int, int) {
-	delay := rand.Float64()*3.0 + 1.0
-	fileURL := item.HTMLURL
+// processPlatformConcurrently processes a platform concurrently
+func (hk *OptimizedHajimiKing) processPlatformConcurrently(platformName string, loopCount int) {
+	platform, exists := hk.platformManager.GetPlatform(platformName)
+	if !exists {
+		hk.logger.Warn("Platform not found", map[string]interface{}{
+			"platform": platformName,
+		})
+		return
+	}
 
-	// 简化日志输出，只显示关键信息
-	repoName := item.Repository.FullName
-	filePath := item.Path
-	time.Sleep(time.Duration(delay) * time.Second)
+	hk.logger.Debug("Processing platform", map[string]interface{}{
+		"platform": platformName,
+		"cycle":    loopCount,
+	})
 
-	content, err := hk.githubClient.GetFileContent(item)
+	queries := platform.GetQueries()
+	for i, query := range queries {
+		task := &QueryTask{
+			ID:         fmt.Sprintf("%s-%d-%d", platformName, loopCount, i),
+			Platform:   platformName,
+			Query:      query,
+			Priority:   platform.GetPriority(),
+			HajimiKing: hk,
+		}
+
+		if err := hk.workerPool.SubmitTask(task); err != nil {
+			hk.logger.Error("Failed to submit query task", map[string]interface{}{
+				"platform": platformName,
+				"query":    query,
+				"error":    err.Error(),
+			})
+		}
+	}
+}
+
+// processResults processes results from the worker pool
+func (hk *OptimizedHajimiKing) processResults() {
+	for result := range hk.workerPool.GetResult() {
+		switch r := result.(type) {
+		case *QueryResult:
+			hk.handleQueryResult(r)
+		case *ValidationResult:
+			hk.handleValidationResult(r)
+		default:
+			hk.logger.Warn("Unknown result type", map[string]interface{}{
+				"type": fmt.Sprintf("%T", result),
+			})
+		}
+	}
+}
+
+// handleQueryResult handles query results
+func (hk *OptimizedHajimiKing) handleQueryResult(result *QueryResult) {
+	if result.Error != nil {
+		hk.logger.Error("Query failed", map[string]interface{}{
+			"platform": result.Platform,
+			"query":    result.Query,
+			"error":    result.Error.Error(),
+		})
+		return
+	}
+
+	hk.logger.Debug("Query completed", map[string]interface{}{
+		"platform": result.Platform,
+		"query":    result.Query,
+		"items":    len(result.Items),
+	})
+
+	// Process items concurrently
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, hk.config.MaxConcurrentFiles)
+
+	for _, item := range result.Items {
+		wg.Add(1)
+		go func(item models.GitHubSearchItem) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			hk.processItemWithSmartDetection(item, result.Platform)
+		}(item)
+	}
+	wg.Wait()
+}
+
+// handleValidationResult handles validation results
+func (hk *OptimizedHajimiKing) handleValidationResult(result *ValidationResult) {
+	hk.logger.LogKeyValidation(result.Platform, result.Key, result.IsValid, "")
+	
+	if result.IsValid {
+		hk.metrics.IncrementValidKeys()
+	} else {
+		hk.metrics.IncrementRateLimitedKeys()
+	}
+}
+
+// processItemWithSmartDetection processes an item with smart detection
+func (hk *OptimizedHajimiKing) processItemWithSmartDetection(item models.GitHubSearchItem, platformName string) {
+	// Check cache first
+	cacheKey := fmt.Sprintf("file_content_%s_%s", item.Repository.FullName, item.Path)
+	if cached, exists := hk.cacheManager.Get(cacheKey); exists {
+		hk.logger.Debug("Using cached content", map[string]interface{}{
+			"repository": item.Repository.FullName,
+			"path":       item.Path,
+		})
+		hk.processContentWithSmartDetection(cached.(string), item, platformName)
+		return
+	}
+
+	// Fetch file content
+	content, err := hk.githubClient.GetFileContent(item.Repository.FullName, item.Path)
 	if err != nil {
-		hk.logger.Warningf("⚠️ Failed to fetch content for file: %s", fileURL)
-		return 0, 0
+		hk.logger.Error("Failed to fetch file content", map[string]interface{}{
+			"repository": item.Repository.FullName,
+			"path":       item.Path,
+			"error":      err.Error(),
+		})
+		return
 	}
 
-	keys := hk.extractKeysFromContent(content)
+	// Cache the content
+	hk.cacheManager.Set(cacheKey, content, hk.config.CacheConfig.L1TTL)
 
-	// 过滤占位符密钥
-	filteredKeys := []string{}
-	for _, key := range keys {
-		contextIndex := strings.Index(content, key)
-		if contextIndex != -1 {
-			snippet := content[contextIndex:min(contextIndex+45, len(content))]
-			if strings.Contains(snippet, "...") || strings.Contains(strings.ToUpper(snippet), "YOUR_") {
-				continue
-			}
-		}
-		filteredKeys = append(filteredKeys, key)
-	}
-
-	// 去重处理
-	keys = unique(filteredKeys)
-
-	if len(keys) == 0 {
-		return 0, 0
-	}
-
-	hk.logger.Infof("🔑 Found %d suspected key(s), validating...", len(keys))
-
-	validKeys := []string{}
-	rateLimitedKeys := []string{}
-
-	// 验证每个密钥
-	for _, key := range keys {
-		validationResult := hk.validateGeminiKey(key)
-		if validationResult == "ok" {
-			validKeys = append(validKeys, key)
-			hk.logger.Infof("✅ VALID: %s", key)
-		} else if validationResult == "rate_limited" {
-			rateLimitedKeys = append(rateLimitedKeys, key)
-			hk.logger.Warningf("⚠️ RATE LIMITED: %s", key)
-		} else {
-			hk.logger.Infof("❌ INVALID: %s, check result: %s", key, validationResult)
-		}
-	}
-
-	// 保存结果
-	if len(validKeys) > 0 {
-		if err := hk.fileManager.SaveValidKeys(repoName, filePath, fileURL, validKeys); err != nil {
-			hk.logger.Errorf("❌ Failed to save valid keys: %v", err)
-		} else {
-			hk.logger.Infof("💾 Saved %d valid key(s)", len(validKeys))
-		}
-
-		// 添加到同步队列（不阻塞主流程）
-		hk.syncUtils.AddKeysToQueue(validKeys)
-	}
-
-	if len(rateLimitedKeys) > 0 {
-		if err := hk.fileManager.SaveRateLimitedKeys(repoName, filePath, fileURL, rateLimitedKeys); err != nil {
-			hk.logger.Errorf("❌ Failed to save rate limited keys: %v", err)
-		} else {
-			hk.logger.Infof("💾 Saved %d rate limited key(s)", len(rateLimitedKeys))
-		}
-	}
-
-	return len(validKeys), len(rateLimitedKeys)
+	// Process content
+	hk.processContentWithSmartDetection(content, item, platformName)
 }
 
-// extractKeysFromContent 从内容中提取密钥
-func (hk *HajimiKing) extractKeysFromContent(content string) []string {
-	// 使用预编译的正则表达式
-	return hk.compiledRegex.FindAllString(content, -1)
-}
+// processContentWithSmartDetection processes content with smart detection
+func (hk *OptimizedHajimiKing) processContentWithSmartDetection(content string, item models.GitHubSearchItem, platformName string) {
+	// Use smart detector
+	keyContexts := hk.smartDetector.DetectKeys(content)
+	
+	hk.logger.Debug("Smart detection completed", map[string]interface{}{
+		"repository": item.Repository.FullName,
+		"path":       item.Path,
+		"keys_found": len(keyContexts),
+	})
 
-// keyValidationWorker 密钥验证工作协程
-func (hk *HajimiKing) keyValidationWorker() {
-	for key := range hk.keyValidationBuffer {
-		result := hk.validateGeminiKey(key)
-		// 处理验证结果
-		if result == "ok" {
-			hk.logger.Infof("✅ VALID: %s", key)
-		} else if result == "rate_limited" {
-			hk.logger.Warningf("⚠️ RATE LIMITED: %s", key)
-		} else {
-			hk.logger.Infof("❌ INVALID: %s, check result: %s", key, result)
-		}
+	// Process detected keys
+	for _, keyContext := range keyContexts {
+		hk.processKeyContext(keyContext, item, platformName)
 	}
 }
 
-// shouldSkipItem 检查是否应该跳过处理此item
-func (hk *HajimiKing) shouldSkipItem(item models.GitHubSearchItem) (bool, string) {
-	// 检查增量扫描时间
-	if hk.checkpoint.LastScanTime != "" {
-		lastScanTime, err := time.Parse(time.RFC3339, hk.checkpoint.LastScanTime)
-		if err == nil {
-			repoPushedAt := item.Repository.PushedAt
-			if repoPushedAt != "" {
-				repoPushedTime, err := time.Parse("2006-01-02T15:04:05Z", repoPushedAt)
-				if err == nil && !repoPushedTime.After(lastScanTime) {
-					hk.skipStats["time_filter"]++
-					return true, "time_filter"
-				}
-			}
-		}
+// processKeyContext processes a detected key context
+func (hk *OptimizedHajimiKing) processKeyContext(keyContext *detection.KeyContext, item models.GitHubSearchItem, platformName string) {
+	// Create validation task
+	task := &ValidationTask{
+		ID:         fmt.Sprintf("validation_%s_%d", platformName, time.Now().UnixNano()),
+		Platform:   platformName,
+		Key:        keyContext.Key,
+		Priority:   1,
+		HajimiKing: hk,
 	}
 
-	// 检查SHA是否已扫描
-	if contains(hk.checkpoint.ScannedSHAs, item.SHA) {
-		hk.skipStats["sha_duplicate"]++
-		return true, "sha_duplicate"
+	// Submit validation task
+	if err := hk.workerPool.SubmitTask(task); err != nil {
+		hk.logger.Error("Failed to submit validation task", map[string]interface{}{
+			"platform": platformName,
+			"key":      keyContext.Key,
+			"error":    err.Error(),
+		})
+		return
 	}
 
-	// 检查仓库年龄
-	repoPushedAt := item.Repository.PushedAt
-	if repoPushedAt != "" {
-		repoPushedTime, err := time.Parse("2006-01-02T15:04:05Z", repoPushedAt)
-		if err == nil && repoPushedTime.Before(time.Now().AddDate(0, 0, -hk.config.DateRangeDays)) {
-			hk.skipStats["age_filter"]++
-			return true, "age_filter"
-		}
-	}
-
-	// 检查文档和示例文件
-	lowercasePath := strings.ToLower(item.Path)
-	for _, token := range hk.config.FilePathBlacklist {
-		if strings.Contains(lowercasePath, strings.ToLower(token)) {
-			hk.skipStats["doc_filter"]++
-			return true, "doc_filter"
-		}
-	}
-
-	return false, ""
+	// Log key discovery
+	hk.logger.LogKeyDiscovery(platformName, keyContext.Key, item.Repository.FullName, item.Path, true, keyContext.Confidence)
 }
 
-// validateGeminiKey 验证Gemini密钥
-func (hk *HajimiKing) validateGeminiKey(apiKey string) string {
-	// 使用更短的延迟和批量验证
-	time.Sleep(time.Duration(rand.Float64()*0.5+0.2) * time.Second)
+// updateMetrics updates system metrics
+func (hk *OptimizedHajimiKing) updateMetrics() {
+	// Update cache metrics
+	cacheMetrics := hk.cacheManager.GetMetrics()
+	hk.metrics.UpdateCacheMetrics(cacheMetrics.GetHitRate(), 1.0-cacheMetrics.GetHitRate())
 
-	// 为每个密钥创建新的客户端，确保API密钥正确设置
-	ctx := context.Background()
-	clientOpts := []option.ClientOption{
-		option.WithAPIKey(apiKey),
-		option.WithEndpoint("generativelanguage.googleapis.com"),
-	}
+	// Update detection metrics
+	detectionMetrics := hk.smartDetector.GetMetrics()
+	hk.metrics.UpdateDetectionMetrics(detectionMetrics.DetectionRate, detectionMetrics.FalsePositiveRate)
 
-	client, err := genai.NewClient(ctx, clientOpts...)
+	// Update worker pool metrics
+	workerPoolMetrics := hk.workerPool.GetMetrics()
+	hk.metrics.UpdateWorkerPoolMetrics(
+		workerPoolMetrics.ActiveWorkers,
+		workerPoolMetrics.QueueSize,
+		workerPoolMetrics.TasksCompleted,
+		workerPoolMetrics.TasksFailed,
+	)
+
+	// Log metrics periodically
+	hk.logger.LogPerformance("throughput", hk.metrics.GetTotalThroughput(), "keys/second")
+	hk.logger.LogPerformance("cache_hit_rate", cacheMetrics.GetHitRate(), "percentage")
+	hk.logger.LogPerformance("detection_rate", detectionMetrics.DetectionRate, "percentage")
+}
+
+// waitForShutdown waits for shutdown signal
+func (hk *OptimizedHajimiKing) waitForShutdown() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	<-sigChan
+	hk.logger.Info("Shutdown signal received")
+
+	// Cancel context
+	hk.cancel()
+
+	// Wait for graceful shutdown
+	time.Sleep(5 * time.Second)
+
+	hk.logger.Info("Application stopped")
+}
+
+// QueryTask implements the Task interface
+type QueryTask struct {
+	ID         string
+	Platform   string
+	Query      string
+	Priority   int
+	HajimiKing *OptimizedHajimiKing
+}
+
+func (qt *QueryTask) Execute() concurrent.Result {
+	// Execute GitHub search
+	items, err := qt.HajimiKing.githubClient.SearchCode(qt.Query)
 	if err != nil {
-		return "error:" + err.Error()
+		return &QueryResult{
+			TaskID:      qt.ID,
+			Platform:    qt.Platform,
+			Query:       qt.Query,
+			Error:       err,
+			ProcessedAt: time.Now(),
+		}
 	}
-	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	return &QueryResult{
+		TaskID:      qt.ID,
+		Platform:    qt.Platform,
+		Query:       qt.Query,
+		Items:       items,
+		ProcessedAt: time.Now(),
+	}
+}
 
-	model := client.GenerativeModel(hk.config.HajimiCheckModel)
-	resp, err := model.GenerateContent(ctx, genai.Text("hi"))
+func (qt *QueryTask) GetID() string {
+	return qt.ID
+}
+
+func (qt *QueryTask) GetPriority() int {
+	return qt.Priority
+}
+
+// ValidationTask implements the Task interface
+type ValidationTask struct {
+	ID         string
+	Platform   string
+	Key        string
+	Priority   int
+	HajimiKing *OptimizedHajimiKing
+}
+
+func (vt *ValidationTask) Execute() concurrent.Result {
+	// Validate key
+	platform, exists := vt.HajimiKing.platformManager.GetPlatform(vt.Platform)
+	if !exists {
+		return &ValidationResult{
+			TaskID:      vt.ID,
+			Platform:    vt.Platform,
+			Key:         vt.Key,
+			IsValid:     false,
+			Error:       fmt.Errorf("platform not found"),
+			ProcessedAt: time.Now(),
+		}
+	}
+
+	validationResult, err := platform.ValidateKey(vt.Key)
 	if err != nil {
-		errStr := err.Error()
-		if strings.Contains(errStr, "PermissionDenied") || strings.Contains(errStr, "Unauthenticated") {
-			return "not_authorized_key"
+		return &ValidationResult{
+			TaskID:      vt.ID,
+			Platform:    vt.Platform,
+			Key:         vt.Key,
+			IsValid:     false,
+			Error:       err,
+			ProcessedAt: time.Now(),
 		}
-		if strings.Contains(errStr, "TooManyRequests") || strings.Contains(errStr, "429") || strings.Contains(strings.ToLower(errStr), "rate limit") {
-			return "rate_limited"
-		}
-		if strings.Contains(errStr, "SERVICE_DISABLED") || strings.Contains(errStr, "API has not been used") {
-			return "disabled"
-		}
-		return "error:" + errStr
 	}
 
-	if resp != nil {
-		return "ok"
-	}
-	return "unknown_error"
-}
-
-// resetSkipStats 重置跳过统计
-func (hk *HajimiKing) resetSkipStats() {
-	hk.skipStats = map[string]int{
-		"time_filter":   0,
-		"sha_duplicate": 0,
-		"age_filter":    0,
-		"doc_filter":    0,
+	return &ValidationResult{
+		TaskID:      vt.ID,
+		Platform:    vt.Platform,
+		Key:         vt.Key,
+		IsValid:     validationResult.Valid,
+		ProcessedAt: time.Now(),
 	}
 }
 
-// handleShutdown 处理关闭
-func (hk *HajimiKing) handleShutdown(validKeys, rateLimitedKeys int) {
-	hk.logger.LogSystemShutdown(validKeys, rateLimitedKeys)
-
-	// 保存最终检查点
-	hk.checkpoint.LastScanTime = time.Now().Format(time.RFC3339)
-	hk.fileManager.SaveCheckpoint(hk.checkpoint)
-
-	// 停止同步服务
-	hk.syncUtils.Stop()
-
-	// 停止API服务器
-	if hk.apiServer != nil {
-		hk.logger.Info("🌐 Stopping API server...")
-		if err := hk.apiServer.Stop(); err != nil {
-			hk.logger.Errorf("❌ Error stopping API server: %v", err)
-		}
-	}
-
-	// 确保程序立即退出
-	os.Exit(0)
+func (vt *ValidationTask) GetID() string {
+	return vt.ID
 }
 
-// contains 检查字符串切片是否包含特定字符串
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+func (vt *ValidationTask) GetPriority() int {
+	return vt.Priority
 }
 
-// unique 去重字符串切片
-func unique(slice []string) []string {
-	keys := make(map[string]bool)
-	list := []string{}
-	for _, entry := range slice {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
-			list = append(list, entry)
-		}
-	}
-	return list
+// QueryResult implements the Result interface
+type QueryResult struct {
+	TaskID      string
+	Platform    string
+	Query       string
+	Items       []models.GitHubSearchItem
+	Error       error
+	ProcessedAt time.Time
 }
 
-// minInt 返回两个整数中的较小值
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+func (qr *QueryResult) GetTaskID() string {
+	return qr.TaskID
+}
+
+func (qr *QueryResult) GetError() error {
+	return qr.Error
+}
+
+func (qr *QueryResult) GetData() interface{} {
+	return qr
+}
+
+// ValidationResult implements the Result interface
+type ValidationResult struct {
+	TaskID      string
+	Platform    string
+	Key         string
+	IsValid     bool
+	Error       error
+	ProcessedAt time.Time
+}
+
+func (vr *ValidationResult) GetTaskID() string {
+	return vr.TaskID
+}
+
+func (vr *ValidationResult) GetError() error {
+	return vr.Error
+}
+
+func (vr *ValidationResult) GetData() interface{} {
+	return vr
 }
 
 func main() {
-	flag.Parse()
+	// Create HajimiKing instance
+	hk, err := NewOptimizedHajimiKing()
+	if err != nil {
+		log.Fatalf("Failed to create HajimiKing instance: %v", err)
+	}
 
-	// 创建HajimiKing实例
-	app := NewHajimiKing()
-
-	// 运行应用（包含信号处理）
-	if err := app.Run(); err != nil {
-		app.logger.Errorf("❌ Application error: %v", err)
-		os.Exit(1)
+	// Run the application
+	if err := hk.Run(); err != nil {
+		log.Fatalf("Application error: %v", err)
 	}
 }
