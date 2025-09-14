@@ -76,10 +76,38 @@ Hajimi King Go v2.0 是一个高性能的多平台API密钥发现系统，支持
 
 ### 1. 环境要求
 - Go 1.21+
-- GitHub API Token
-- 目标平台的API密钥（可选）
+- GitHub API Token（必需）
+- 目标平台的API密钥（可选，用于密钥验证）
 
-### 2. 安装和配置
+### 2. 获取必要的API密钥
+
+#### GitHub Personal Access Token
+1. 访问 [GitHub Settings > Personal Access Tokens](https://github.com/settings/tokens)
+2. 点击 "Generate new token (classic)"
+3. 选择权限：
+   - `public_repo` - 访问公共仓库
+   - `repo` - 访问私有仓库（如果需要）
+4. 复制生成的token（格式：`ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）
+
+#### Google Gemini API Key（可选）
+1. 访问 [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. 登录Google账户
+3. 点击 "Create API Key"
+4. 复制生成的API密钥（格式：`AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）
+
+#### OpenRouter API Key（可选）
+1. 访问 [OpenRouter Keys](https://openrouter.ai/keys)
+2. 注册/登录账户
+3. 点击 "Create Key"
+4. 复制生成的API密钥（格式：`sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）
+
+#### SiliconFlow API Key（可选）
+1. 访问 [SiliconFlow Console](https://siliconflow.cn/console/api-keys)
+2. 注册/登录账户
+3. 创建新的API密钥
+4. 复制生成的API密钥（格式：`sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）
+
+### 3. 安装和配置
 
 ```bash
 # 克隆项目
@@ -96,37 +124,200 @@ cp .env.example .env
 vim .env
 ```
 
-### 3. 配置说明
+### 4. 配置说明
 
-#### 必需配置
+#### 🔑 必需配置
+
+**GitHub API配置（必须）**
 ```bash
+# GitHub Personal Access Token - 必需
+# 获取地址: https://github.com/settings/tokens
+# 权限要求: public_repo, repo (如果需要访问私有仓库)
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# GitHub API代理（可选，如果需要通过代理访问）
+GITHUB_PROXY=http://proxy.company.com:8080
+
+# GitHub API基础URL（可选，默认使用官方API）
+GITHUB_BASE_URL=https://api.github.com
+```
+
+**平台开关配置（必须）**
+```bash
+# 全局平台开关
+PLATFORM_GLOBAL_ENABLED=true
+
+# 执行模式: all(全部平台) | single(单平台) | selected(选中平台)
+PLATFORM_EXECUTION_MODE=all
+
+# 各平台开关
+PLATFORM_GEMINI_ENABLED=true
+PLATFORM_OPENROUTER_ENABLED=false
+PLATFORM_SILICONFLOW_ENABLED=false
+
+# 选中平台列表（当EXECUTION_MODE=selected时生效）
+PLATFORM_SELECTED=gemini,openrouter
+```
+
+#### 🔧 推荐配置
+
+**API密钥配置（用于密钥验证）**
+```bash
+# Google Gemini API密钥
+# 获取地址: https://makersuite.google.com/app/apikey
+GEMINI_API_KEY=AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# OpenRouter API密钥
+# 获取地址: https://openrouter.ai/keys
+OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# SiliconFlow API密钥
+# 获取地址: https://siliconflow.cn/console/api-keys
+SILICONFLOW_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+**性能优化配置**
+```bash
+# Worker Pool大小（建议根据CPU核心数调整）
+WORKER_POOL_SIZE=8
+
+# 最大并发文件处理数
+MAX_CONCURRENT_FILES=10
+
+# 重试配置
+MAX_RETRIES=3
+RETRY_DELAY=5s
+
+# 扫描间隔
+SCAN_INTERVAL=1m
+```
+
+**缓存配置**
+```bash
+# L1缓存（内存）配置
+CACHE_L1_MAX_SIZE=1000
+CACHE_L1_TTL=5m
+
+# L2缓存（文件）配置
+CACHE_L2_TTL=1h
+
+# L3缓存（Redis）配置（可选）
+CACHE_L3_TTL=24h
+CACHE_ENABLE_L3=false
+CACHE_CLEANUP_INTERVAL=10m
+```
+
+**数据存储配置**
+```bash
+# 数据存储路径
+DATA_PATH=./data
+
+# 搜索查询文件路径
+QUERIES_PATH=./queries.txt
+
+# 检查点文件路径
+CHECKPOINT_PATH=./checkpoint.json
+
+# 文件前缀配置
+VALID_KEY_PREFIX=keys_valid
+VALID_KEY_DETAIL_PREFIX=keys_valid_detail
+RATE_LIMITED_PREFIX=key_429
+```
+
+#### 🌐 Web界面配置
+
+```bash
+# API服务器端口
+API_SERVER_PORT=8080
+
+# JWT密钥（生产环境请修改）
+JWT_SECRET=hajimi-king-secret-key
+```
+
+#### 🔄 外部同步配置（可选）
+
+```bash
+# 同步到Gemini Balancer
+SYNC_TO_GEMINI_BALANCER=false
+SYNC_TO_GPT_LOAD=false
+
+# 同步端点配置
+SYNC_ENDPOINT=https://your-balancer.com/api
+SYNC_TOKEN=your_sync_token_here
+```
+
+#### 📝 日志配置
+
+```bash
+# 日志级别: debug | info | warn | error
+LOG_LEVEL=info
+
+# 日志文件路径
+LOG_FILE=logs/hajimi-king.log
+```
+
+### 5. 完整配置示例
+
+**最小化配置（仅GitHub搜索）**
+```bash
+# .env 文件内容
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+PLATFORM_GLOBAL_ENABLED=true
+PLATFORM_EXECUTION_MODE=all
+PLATFORM_GEMINI_ENABLED=true
+PLATFORM_OPENROUTER_ENABLED=false
+PLATFORM_SILICONFLOW_ENABLED=false
+```
+
+**完整配置（包含API验证）**
+```bash
+# .env 文件内容
 # GitHub配置
-GITHUB_TOKEN=your_github_token_here
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+GITHUB_PROXY=
+GITHUB_BASE_URL=https://api.github.com
 
 # 平台开关
 PLATFORM_GLOBAL_ENABLED=true
 PLATFORM_EXECUTION_MODE=all
 PLATFORM_GEMINI_ENABLED=true
-```
+PLATFORM_OPENROUTER_ENABLED=true
+PLATFORM_SILICONFLOW_ENABLED=true
 
-#### 可选配置
-```bash
 # API密钥（用于验证）
-GEMINI_API_KEY=your_gemini_api_key_here
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-SILICONFLOW_API_KEY=your_siliconflow_api_key_here
+GEMINI_API_KEY=AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+SILICONFLOW_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# 性能调优
+# 性能配置
 WORKER_POOL_SIZE=8
 MAX_CONCURRENT_FILES=10
-CACHE_L1_MAX_SIZE=1000
+MAX_RETRIES=3
+RETRY_DELAY=5s
+SCAN_INTERVAL=1m
 
-# 外部同步
-SYNC_TO_GEMINI_BALANCER=false
-SYNC_TO_GPT_LOAD=false
+# 缓存配置
+CACHE_L1_MAX_SIZE=1000
+CACHE_L1_TTL=5m
+CACHE_L2_TTL=1h
+CACHE_L3_TTL=24h
+CACHE_ENABLE_L3=false
+
+# 数据存储
+DATA_PATH=./data
+QUERIES_PATH=./queries.txt
+CHECKPOINT_PATH=./checkpoint.json
+
+# Web界面
+API_SERVER_PORT=8080
+JWT_SECRET=your-secure-jwt-secret-key
+
+# 日志
+LOG_LEVEL=info
+LOG_FILE=logs/hajimi-king.log
 ```
 
-### 4. 运行应用
+### 6. 运行应用
 
 ```bash
 # 编译
@@ -136,13 +327,185 @@ go build -o hajimi-king-v2 ./cmd/app
 ./hajimi-king-v2
 ```
 
-### 5. 访问Web界面
+### 7. 访问Web界面
 
 打开浏览器访问: http://localhost:8080
 
 默认登录信息:
 - 用户名: admin
 - 密码: admin
+
+### 8. 配置验证
+
+**检查配置是否正确**
+```bash
+# 检查环境变量
+echo $GITHUB_TOKEN
+
+# 检查配置文件
+cat .env
+
+# 测试GitHub连接
+curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
+```
+
+**快速测试脚本**
+```bash
+#!/bin/bash
+# 快速测试脚本 - test_config.sh
+
+echo "🔍 检查Hajimi King Go v2.0配置..."
+
+# 检查Go版本
+echo "📦 Go版本:"
+go version
+
+# 检查环境变量
+echo "🔑 环境变量检查:"
+if [ -z "$GITHUB_TOKEN" ]; then
+    echo "❌ GITHUB_TOKEN 未设置"
+else
+    echo "✅ GITHUB_TOKEN 已设置"
+fi
+
+# 检查配置文件
+echo "📄 配置文件检查:"
+if [ -f ".env" ]; then
+    echo "✅ .env 文件存在"
+    echo "📋 当前配置:"
+    grep -E "^(GITHUB_TOKEN|PLATFORM_|GEMINI_API_KEY|OPENROUTER_API_KEY|SILICONFLOW_API_KEY)" .env | sed 's/=.*/=***/'
+else
+    echo "❌ .env 文件不存在，请复制 .env.example 并配置"
+fi
+
+# 检查编译
+echo "🔨 编译测试:"
+if go build -o hajimi-king-v2 ./cmd/app 2>/dev/null; then
+    echo "✅ 编译成功"
+    rm -f hajimi-king-v2
+else
+    echo "❌ 编译失败"
+fi
+
+# 检查测试
+echo "🧪 测试运行:"
+if go test ./internal/config ./internal/cache ./internal/detection 2>/dev/null; then
+    echo "✅ 测试通过"
+else
+    echo "❌ 测试失败"
+fi
+
+echo "🎉 配置检查完成！"
+```
+
+**常见配置问题**
+
+| 问题 | 原因 | 解决方案 |
+|------|------|----------|
+| 启动失败 | 缺少GITHUB_TOKEN | 设置有效的GitHub Personal Access Token |
+| 无平台启用 | 平台开关配置错误 | 检查PLATFORM_*_ENABLED设置 |
+| API验证失败 | API密钥无效 | 检查各平台的API密钥格式和有效性 |
+| 内存不足 | 缓存配置过大 | 调整CACHE_L1_MAX_SIZE |
+| 连接超时 | 网络问题 | 配置GITHUB_PROXY或检查网络连接 |
+| 编译失败 | Go版本过低 | 升级到Go 1.21+ |
+| 权限错误 | GitHub Token权限不足 | 检查Token权限设置 |
+
+## 💡 使用示例
+
+### 基本使用流程
+
+1. **配置系统**
+```bash
+# 复制配置文件
+cp .env.example .env
+
+# 编辑配置（设置GitHub Token）
+vim .env
+```
+
+2. **启动系统**
+```bash
+# 编译并运行
+go build -o hajimi-king-v2 ./cmd/app
+./hajimi-king-v2
+```
+
+3. **查看结果**
+- 访问Web界面: http://localhost:8080
+- 查看发现的密钥文件: `./data/keys_valid_*.txt`
+- 查看详细日志: `./data/keys_valid_detail_*.log`
+
+### 不同使用场景
+
+**场景1: 仅搜索GitHub（不验证密钥）**
+```bash
+# .env 配置
+GITHUB_TOKEN=your_github_token
+PLATFORM_GLOBAL_ENABLED=true
+PLATFORM_EXECUTION_MODE=all
+PLATFORM_GEMINI_ENABLED=true
+PLATFORM_OPENROUTER_ENABLED=false
+PLATFORM_SILICONFLOW_ENABLED=false
+```
+
+**场景2: 搜索并验证所有平台**
+```bash
+# .env 配置
+GITHUB_TOKEN=your_github_token
+GEMINI_API_KEY=your_gemini_key
+OPENROUTER_API_KEY=your_openrouter_key
+SILICONFLOW_API_KEY=your_siliconflow_key
+PLATFORM_GLOBAL_ENABLED=true
+PLATFORM_EXECUTION_MODE=all
+PLATFORM_GEMINI_ENABLED=true
+PLATFORM_OPENROUTER_ENABLED=true
+PLATFORM_SILICONFLOW_ENABLED=true
+```
+
+**场景3: 仅验证特定平台**
+```bash
+# .env 配置
+GITHUB_TOKEN=your_github_token
+GEMINI_API_KEY=your_gemini_key
+PLATFORM_GLOBAL_ENABLED=true
+PLATFORM_EXECUTION_MODE=selected
+PLATFORM_SELECTED=gemini
+PLATFORM_GEMINI_ENABLED=true
+PLATFORM_OPENROUTER_ENABLED=false
+PLATFORM_SILICONFLOW_ENABLED=false
+```
+
+### 监控和调试
+
+**查看实时日志**
+```bash
+# 查看应用日志
+tail -f logs/hajimi-king.log
+
+# 查看特定平台日志
+grep "gemini" logs/hajimi-king.log
+```
+
+**检查系统状态**
+```bash
+# 运行配置检查
+./test_config.sh
+
+# 检查API连接
+curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
+```
+
+**性能调优**
+```bash
+# 调整并发数（根据CPU核心数）
+WORKER_POOL_SIZE=16
+
+# 调整缓存大小（根据内存大小）
+CACHE_L1_MAX_SIZE=2000
+
+# 调整扫描间隔（根据需求）
+SCAN_INTERVAL=30s
+```
 
 ## 📁 项目结构
 
