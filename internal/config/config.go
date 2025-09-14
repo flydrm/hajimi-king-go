@@ -11,9 +11,10 @@ import (
 // Config represents the application configuration
 type Config struct {
 	// GitHub configuration
-	GitHubToken    string `json:"github_token"`
-	GitHubProxy    string `json:"github_proxy"`
-	GitHubBaseURL  string `json:"github_base_url"`
+	GitHubTokens   []string `json:"github_tokens"`   // 支持多个Token
+	GitHubToken    string   `json:"github_token"`    // 单个Token (向后兼容)
+	GitHubProxy    string   `json:"github_proxy"`
+	GitHubBaseURL  string   `json:"github_base_url"`
 	
 	// Data paths
 	DataPath       string `json:"data_path"`
@@ -90,6 +91,7 @@ func LoadConfig() *Config {
 
 	config := &Config{
 		// GitHub configuration
+		GitHubTokens:   parseStringList(getEnvWithDefault("GITHUB_TOKENS", "")),
 		GitHubToken:    getEnvWithDefault("GITHUB_TOKEN", ""),
 		GitHubProxy:    getEnvWithDefault("GITHUB_PROXY", ""),
 		GitHubBaseURL:  getEnvWithDefault("GITHUB_BASE_URL", "https://api.github.com"),
@@ -215,6 +217,40 @@ func (c *Config) sortPlatformsByPriority(platforms []string) []string {
 		}
 	}
 	return platforms
+}
+
+// GetGitHubTokens returns all available GitHub tokens
+func (c *Config) GetGitHubTokens() []string {
+	tokens := make([]string, 0)
+	
+	// Add tokens from GITHUB_TOKENS (comma-separated)
+	tokens = append(tokens, c.GitHubTokens...)
+	
+	// Add single token from GITHUB_TOKEN if not empty and not already in list
+	if c.GitHubToken != "" {
+		// Check if already exists
+		exists := false
+		for _, token := range tokens {
+			if token == c.GitHubToken {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			tokens = append(tokens, c.GitHubToken)
+		}
+	}
+	
+	return tokens
+}
+
+// GetPrimaryGitHubToken returns the primary GitHub token (first available)
+func (c *Config) GetPrimaryGitHubToken() string {
+	tokens := c.GetGitHubTokens()
+	if len(tokens) > 0 {
+		return tokens[0]
+	}
+	return ""
 }
 
 // Helper functions

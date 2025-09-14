@@ -11,13 +11,14 @@ import (
 
 // Client represents a GitHub API client
 type Client struct {
-	httpClient *http.Client
-	token      string
-	baseURL    string
-	proxy      string
+	httpClient  *http.Client
+	token       string
+	tokenManager *TokenManager
+	baseURL     string
+	proxy       string
 }
 
-// NewClient creates a new GitHub client
+// NewClient creates a new GitHub client with single token
 func NewClient(token, proxy, baseURL string) (*Client, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -42,10 +43,57 @@ func NewClient(token, proxy, baseURL string) (*Client, error) {
 	}, nil
 }
 
-// SearchCode searches for code on GitHub
+// NewClientWithTokens creates a new GitHub client with multiple tokens
+func NewClientWithTokens(tokens []string, proxy, baseURL string) (*Client, error) {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	// Configure proxy if provided
+	if proxy != "" {
+		proxyURL, err := url.Parse(proxy)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL: %w", err)
+		}
+		client.Transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
+	}
+
+	tokenManager := NewTokenManager(tokens)
+	primaryToken := ""
+	if tokenManager != nil {
+		var err error
+		primaryToken, err = tokenManager.GetNextToken()
+		if err != nil {
+			return nil, fmt.Errorf("no available tokens: %w", err)
+		}
+	}
+
+	return &Client{
+		httpClient:   client,
+		token:        primaryToken,
+		tokenManager: tokenManager,
+		baseURL:      baseURL,
+		proxy:        proxy,
+	}, nil
+}
+
+// SearchCode searches for code on GitHub with automatic token rotation
 func (c *Client) SearchCode(query string) ([]GitHubSearchItem, error) {
+	return c.searchCodeWithRetry(query, 0)
+}
+
+// searchCodeWithRetry performs the actual search with retry logic
+func (c *Client) searchCodeWithRetry(query string, retryCount int) ([]GitHubSearchItem, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Get current token
+	token := c.getCurrentToken()
+	if token == "" {
+		return nil, fmt.Errorf("no available GitHub token")
+	}
 
 	// Build search URL
 	searchURL := fmt.Sprintf("%s/search/code?q=%s&per_page=100", c.baseURL, url.QueryEscape(query))
@@ -58,9 +106,7 @@ func (c *Client) SearchCode(query string) ([]GitHubSearchItem, error) {
 
 	// Set headers
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "token "+c.token)
-	}
+	req.Header.Set("Authorization", "token "+token)
 
 	// Send request
 	resp, err := c.httpClient.Do(req)
@@ -68,6 +114,29 @@ func (c *Client) SearchCode(query string) ([]GitHubSearchItem, error) {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// Handle rate limiting and authentication errors
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		// Token is invalid or expired, try next token
+		if c.tokenManager != nil {
+			c.tokenManager.BlacklistToken(token, "authentication failed")
+			if retryCount < 3 {
+				return c.searchCodeWithRetry(query, retryCount+1)
+			}
+		}
+		return nil, fmt.Errorf("GitHub API authentication error: %d", resp.StatusCode)
+	}
+
+	if resp.StatusCode == 429 {
+		// Rate limited, try next token
+		if c.tokenManager != nil {
+			c.tokenManager.BlacklistToken(token, "rate limited")
+			if retryCount < 3 {
+				return c.searchCodeWithRetry(query, retryCount+1)
+			}
+		}
+		return nil, fmt.Errorf("GitHub API rate limited: %d", resp.StatusCode)
+	}
 
 	// Check status code
 	if resp.StatusCode != 200 {
@@ -83,10 +152,33 @@ func (c *Client) SearchCode(query string) ([]GitHubSearchItem, error) {
 	return result.Items, nil
 }
 
-// GetFileContent retrieves file content from GitHub
+// getCurrentToken returns the current token, rotating if needed
+func (c *Client) getCurrentToken() string {
+	if c.tokenManager != nil {
+		// Use token manager for rotation
+		token, err := c.tokenManager.GetNextToken()
+		if err == nil {
+			c.token = token
+		}
+	}
+	return c.token
+}
+
+// GetFileContent retrieves file content from GitHub with token rotation
 func (c *Client) GetFileContent(repo, path string) (string, error) {
+	return c.getFileContentWithRetry(repo, path, 0)
+}
+
+// getFileContentWithRetry performs the actual file content retrieval with retry logic
+func (c *Client) getFileContentWithRetry(repo, path string, retryCount int) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Get current token
+	token := c.getCurrentToken()
+	if token == "" {
+		return "", fmt.Errorf("no available GitHub token")
+	}
 
 	// Build content URL
 	contentURL := fmt.Sprintf("%s/repos/%s/contents/%s", c.baseURL, repo, path)
@@ -99,9 +191,7 @@ func (c *Client) GetFileContent(repo, path string) (string, error) {
 
 	// Set headers
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "token "+c.token)
-	}
+	req.Header.Set("Authorization", "token "+token)
 
 	// Send request
 	resp, err := c.httpClient.Do(req)
@@ -109,6 +199,29 @@ func (c *Client) GetFileContent(repo, path string) (string, error) {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// Handle rate limiting and authentication errors
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		// Token is invalid or expired, try next token
+		if c.tokenManager != nil {
+			c.tokenManager.BlacklistToken(token, "authentication failed")
+			if retryCount < 3 {
+				return c.getFileContentWithRetry(repo, path, retryCount+1)
+			}
+		}
+		return "", fmt.Errorf("GitHub API authentication error: %d", resp.StatusCode)
+	}
+
+	if resp.StatusCode == 429 {
+		// Rate limited, try next token
+		if c.tokenManager != nil {
+			c.tokenManager.BlacklistToken(token, "rate limited")
+			if retryCount < 3 {
+				return c.getFileContentWithRetry(repo, path, retryCount+1)
+			}
+		}
+		return "", fmt.Errorf("GitHub API rate limited: %d", resp.StatusCode)
+	}
 
 	// Check status code
 	if resp.StatusCode != 200 {
@@ -180,4 +293,26 @@ type TextMatch struct {
 type Match struct {
 	Text       string `json:"text"`
 	Indices    []int  `json:"indices"`
+}
+
+// GetTokenStatus returns the current token manager status
+func (c *Client) GetTokenStatus() map[string]interface{} {
+	if c.tokenManager != nil {
+		return c.tokenManager.GetStatus()
+	}
+	return map[string]interface{}{
+		"total_tokens":     1,
+		"available_tokens": 1,
+		"blacklisted":      0,
+		"current_index":    0,
+		"mode":            "single_token",
+	}
+}
+
+// GetAvailableTokenCount returns the number of available tokens
+func (c *Client) GetAvailableTokenCount() int {
+	if c.tokenManager != nil {
+		return c.tokenManager.GetTokenCount()
+	}
+	return 1
 }

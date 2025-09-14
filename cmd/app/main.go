@@ -75,10 +75,21 @@ func NewOptimizedHajimiKing() (*OptimizedHajimiKing, error) {
 	// Initialize platform manager
 	platformManager := platform.NewPlatformManager()
 
-	// Initialize GitHub client
-	githubClient, err := github.NewClient(cfg.GitHubToken, cfg.GitHubProxy, cfg.GitHubBaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize GitHub client: %w", err)
+	// Initialize GitHub client with multiple tokens support
+	var githubClient *github.Client
+	tokens := cfg.GetGitHubTokens()
+	if len(tokens) > 1 {
+		// Use multiple tokens with rotation
+		githubClient, err = github.NewClientWithTokens(tokens, cfg.GitHubProxy, cfg.GitHubBaseURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GitHub client with multiple tokens: %w", err)
+		}
+	} else {
+		// Use single token (backward compatibility)
+		githubClient, err = github.NewClient(cfg.GitHubToken, cfg.GitHubProxy, cfg.GitHubBaseURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize GitHub client: %w", err)
+		}
 	}
 
 	// Initialize file manager

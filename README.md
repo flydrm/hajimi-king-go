@@ -88,12 +88,20 @@ Hajimi King Go v2.0 是一个高性能的多平台API密钥发现系统，支持
 ### 2. 获取必要的API密钥
 
 #### GitHub Personal Access Token（必需）
+
+**单个Token配置**：
 1. 访问 [GitHub Settings > Personal Access Tokens](https://github.com/settings/tokens)
 2. 点击 "Generate new token (classic)"
 3. 选择权限：
    - `public_repo` - 访问公共仓库
    - `repo` - 访问私有仓库（如果需要）
 4. 复制生成的token（格式：`ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`）
+
+**多个Token配置（推荐）**：
+- 支持配置多个Token实现负载均衡和故障转移
+- 系统会自动轮换使用Token
+- 当某个Token失效或限流时，自动切换到下一个Token
+- 配置方式：`GITHUB_TOKENS=token1,token2,token3`
 
 #### 其他平台API密钥（不需要预先配置）
 **重要说明**: 系统现在使用**发现的API密钥本身**进行验证，无需预先配置任何API密钥！
