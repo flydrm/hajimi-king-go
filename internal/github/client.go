@@ -1,456 +1,318 @@
 package github
 
 import (
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"math/rand"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
-	"sync"
 	"time"
-
-	"hajimi-king-go/internal/config"
-	"hajimi-king-go/internal/logger"
-	"hajimi-king-go/internal/models"
 )
 
-// GitHubSearchResult 表示GitHub搜索结果
-type GitHubSearchResult struct {
-	TotalCount       int               `json:"total_count"`
-	IncompleteResults bool             `json:"incomplete_results"`
-	Items            []GitHubSearchItem `json:"items"`
-}
-
-// GitHubSearchItem 表示GitHub搜索的单个结果项
-type GitHubSearchItem struct {
-	SHA        string           `json:"sha"`
-	Path       string           `json:"path"`
-	HTMLURL    string           `json:"html_url"`
-	Repository GitHubRepository `json:"repository"`
-}
-
-// GitHubRepository 表示GitHub仓库信息
-type GitHubRepository struct {
-	FullName  string `json:"full_name"`
-	PushedAt  string `json:"pushed_at"`
-}
-
-// Client GitHub客户端
+// Client represents a GitHub API client
 type Client struct {
-	tokens         []string
-	tokenPtr       int
-	client         *http.Client
-	clientPool     chan *http.Client
-	transportPool  chan *http.Transport
-	poolMutex      sync.Mutex
+	httpClient  *http.Client
+	token       string
+	tokenManager *TokenManager
+	baseURL     string
+	proxy       string
 }
 
-// NewClient 创建GitHub客户端
-func NewClient(tokens []string) *Client {
+// NewClient creates a new GitHub client with single token
+func NewClient(token, proxy, baseURL string) (*Client, error) {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	// Configure proxy if provided
+	if proxy != "" {
+		proxyURL, err := url.Parse(proxy)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL: %w", err)
+		}
+		client.Transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
+	}
+
 	return &Client{
-		tokens:        tokens,
-		tokenPtr:      0,
-		client:        &http.Client{Timeout: 30 * time.Second},
-		clientPool:    make(chan *http.Client, 10),
-		transportPool: make(chan *http.Transport, 10),
-	}
-}
-
-// SearchForKeys 搜索GitHub代码中的密钥
-func (c *Client) SearchForKeys(query string) (*models.GitHubSearchResult, error) {
-	allItems := []GitHubSearchItem{}
-	totalCount := 0
-	expectedTotal := 0
-	pagesProcessed := 0
-
-	// 统计信息
-	totalRequests := 0
-	failedRequests := 0
-	rateLimitHits := 0
-
-	for page := 1; page <= 10; page++ {
-		var pageResult *GitHubSearchResult
-		pageSuccess := false
-
-		for attempt := 1; attempt <= 5; attempt++ {
-			currentToken := c.nextToken()
-
-			headers := map[string]string{
-				"Accept":     "application/vnd.github.v3+json",
-				"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-			}
-
-			if currentToken != "" {
-				headers["Authorization"] = "token " + currentToken
-			}
-
-			params := url.Values{}
-			params.Set("q", query)
-			params.Set("per_page", "100")
-			params.Set("page", strconv.Itoa(page))
-
-			apiURL := "https://api.github.com/search/code?" + params.Encode()
-
-			req, err := http.NewRequest("GET", apiURL, nil)
-			if err != nil {
-				continue
-			}
-
-			for key, value := range headers {
-				req.Header.Set(key, value)
-			}
-
-			totalRequests++
-			
-			// 获取随机代理配置
-			var proxyConfig map[string]string
-			if cfg := config.GetConfig(); cfg != nil {
-				proxyConfig = cfg.GetRandomProxy()
-			}
-
-			var resp *http.Response
-			if proxyConfig != nil {
-				// 使用代理发送请求
-				proxyURL := proxyConfig["http"]
-				proxy, err := url.Parse(proxyURL)
-				if err == nil {
-					transport := &http.Transport{Proxy: http.ProxyURL(proxy)}
-					client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
-					resp, err = client.Do(req)
-				} else {
-					resp, err = c.client.Do(req)
-				}
-			} else {
-				resp, err = c.client.Do(req)
-			}
-
-			if err != nil {
-				failedRequests++
-				shifted := 2 << attempt
-				wait := minFloat(float64(shifted)+rand.Float64(), 60)
-				if attempt >= 3 {
-					logger.GetLogger().Warningf("❌ Network error after %d attempts on page %d: %v", attempt, page, err)
-				}
-				time.Sleep(time.Duration(wait) * time.Second)
-				continue
-			}
-			
-			if resp == nil {
-				failedRequests++
-				logger.GetLogger().Warningf("❌ Nil response received on page %d", page)
-				time.Sleep(5 * time.Second)
-				continue
-			}
-			
-			defer resp.Body.Close()
-
-			// 检查rate limit
-			rateLimitRemaining := resp.Header.Get("X-RateLimit-Remaining")
-			if rateLimitRemaining != "" {
-				if remaining, err := strconv.Atoi(rateLimitRemaining); err == nil && remaining < 3 {
-					logger.GetLogger().Warningf("⚠️ Rate limit low: %d remaining, token: %s", remaining, currentToken)
-				}
-			}
-
-			if resp.StatusCode == 403 || resp.StatusCode == 429 {
-				rateLimitHits++
-				shifted := 2 << attempt
-				wait := minFloat(float64(shifted)+rand.Float64(), 60)
-				if attempt >= 3 {
-					logger.GetLogger().Warningf("❌ Rate limit hit, status:%d (attempt %d/%d) - waiting %.1fs", resp.StatusCode, attempt, 5, wait)
-				}
-				time.Sleep(time.Duration(wait) * time.Second)
-				continue
-			}
-
-			if resp.StatusCode >= 400 {
-				failedRequests++
-				if attempt == 5 {
-					logger.GetLogger().Errorf("❌ HTTP %d error after %d attempts on page %d", resp.StatusCode, attempt, page)
-				}
-				time.Sleep(time.Duration(2<<attempt) * time.Second)
-				continue
-			}
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				failedRequests++
-				continue
-			}
-
-			pageResult = &GitHubSearchResult{}
-			if err := json.Unmarshal(body, pageResult); err != nil {
-				failedRequests++
-				continue
-			}
-
-			pageSuccess = true
-			break
-		}
-
-		if !pageSuccess || pageResult == nil {
-			if page == 1 {
-				logger.GetLogger().Errorf("❌ First page failed for query: %s...", query[:min(50, len(query))])
-				break
-			}
-			continue
-		}
-
-		pagesProcessed++
-
-		if page == 1 {
-			totalCount = pageResult.TotalCount
-			expectedTotal = min(totalCount, 1000)
-		}
-
-		allItems = append(allItems, pageResult.Items...)
-
-		if expectedTotal > 0 && len(allItems) >= expectedTotal {
-			break
-		}
-
-		if page < 10 {
-			sleepTime := rand.Float64()*0.5 + 0.3
-			logger.GetLogger().Infof("⏳ Processing query: 【%s】,page %d,item count: %d,expected total: %d,total count: %d,random sleep: %.1fs",
-				query, page, len(pageResult.Items), expectedTotal, totalCount, sleepTime)
-			time.Sleep(time.Duration(sleepTime) * time.Second)
-		}
-	}
-
-	finalCount := len(allItems)
-
-	// 检查数据完整性
-	if expectedTotal > 0 && finalCount < expectedTotal {
-		discrepancy := expectedTotal - finalCount
-		if discrepancy > expectedTotal/10 { // 超过10%数据丢失
-			logger.GetLogger().Warningf("⚠️ Significant data loss: %d/%d items missing (%.1f%%)",
-				discrepancy, expectedTotal, float64(discrepancy)/float64(expectedTotal)*100)
-		}
-	}
-
-	// 主要成功日志 - 一条日志包含所有关键信息
-	logger.GetLogger().Infof("🔍 GitHub search complete: query:【%s】 | page success count:%d | items count:%d/%d | total requests:%d",
-		query, pagesProcessed, finalCount, expectedTotal, totalRequests)
-
-	// 转换为models.GitHubSearchItem
-	modelItems := make([]models.GitHubSearchItem, len(allItems))
-	for i, item := range allItems {
-		modelItems[i] = models.GitHubSearchItem{
-			SHA:     item.SHA,
-			Path:    item.Path,
-			HTMLURL: item.HTMLURL,
-			Repository: models.GitHubRepository{
-				FullName: item.Repository.FullName,
-				PushedAt: item.Repository.PushedAt,
-			},
-		}
-	}
-
-	return &models.GitHubSearchResult{
-		TotalCount:       totalCount,
-		IncompleteResults: finalCount < expectedTotal && expectedTotal > 0,
-		Items:            modelItems,
+		httpClient: client,
+		token:      token,
+		baseURL:    baseURL,
+		proxy:      proxy,
 	}, nil
 }
 
-// GetFileContent 获取文件内容
-func (c *Client) GetFileContent(item models.GitHubSearchItem) (string, error) {
-	repoFullName := item.Repository.FullName
-	filePath := item.Path
-
-	metadataURL := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoFullName, filePath)
-	
-	headers := map[string]string{
-		"Accept":     "application/vnd.github.v3+json",
-		"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+// NewClientWithTokens creates a new GitHub client with multiple tokens
+func NewClientWithTokens(tokens []string, proxy, baseURL string) (*Client, error) {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
 	}
 
-	currentToken := c.nextToken()
-	if currentToken != "" {
-		headers["Authorization"] = "token " + currentToken
-	}
-
-	req, err := http.NewRequest("GET", metadataURL, nil)
-	if err != nil {
-		return "", err
-	}
-
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-
-	// 获取代理配置
-	var proxyConfig map[string]string
-	if cfg := config.GetConfig(); cfg != nil {
-		proxyConfig = cfg.GetRandomProxy()
-	}
-
-	var resp *http.Response
-	if proxyConfig != nil {
-		// 使用代理发送请求
-		proxyURL := proxyConfig["http"]
-		proxy, err := url.Parse(proxyURL)
-		if err == nil {
-			transport := &http.Transport{Proxy: http.ProxyURL(proxy)}
-			client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
-			resp, err = client.Do(req)
-		} else {
-			resp, err = c.client.Do(req)
+	// Configure proxy if provided
+	if proxy != "" {
+		proxyURL, err := url.Parse(proxy)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL: %w", err)
 		}
-	} else {
-		resp, err = c.client.Do(req)
+		client.Transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
 	}
 
-	if err != nil {
-		return "", err
+	tokenManager := NewTokenManager(tokens)
+	primaryToken := ""
+	if tokenManager != nil {
+		var err error
+		primaryToken, err = tokenManager.GetNextToken()
+		if err != nil {
+			return nil, fmt.Errorf("no available tokens: %w", err)
+		}
 	}
-	if resp == nil {
-		return "", fmt.Errorf("http request returned nil response and nil error")
+
+	return &Client{
+		httpClient:   client,
+		token:        primaryToken,
+		tokenManager: tokenManager,
+		baseURL:      baseURL,
+		proxy:        proxy,
+	}, nil
+}
+
+// SearchCode searches for code on GitHub with automatic token rotation
+func (c *Client) SearchCode(query string) ([]GitHubSearchItem, error) {
+	return c.searchCodeWithRetry(query, 0)
+}
+
+// searchCodeWithRetry performs the actual search with retry logic
+func (c *Client) searchCodeWithRetry(query string, retryCount int) ([]GitHubSearchItem, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Get current token
+	token := c.getCurrentToken()
+	if token == "" {
+		return nil, fmt.Errorf("no available GitHub token")
+	}
+
+	// Build search URL
+	searchURL := fmt.Sprintf("%s/search/code?q=%s&per_page=100", c.baseURL, url.QueryEscape(query))
+
+	// Create request
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Authorization", "token "+token)
+
+	// Send request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	logger.GetLogger().Infof("🔍 Processing file: %s", metadataURL)
-
-	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("HTTP error: %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var fileMetadata struct {
-		Encoding   string `json:"encoding"`
-		Content    string `json:"content"`
-		DownloadURL string `json:"download_url"`
-	}
-
-	if err := json.Unmarshal(body, &fileMetadata); err != nil {
-		return "", err
-	}
-
-	// 检查是否有base64编码的内容
-	if fileMetadata.Encoding == "base64" && fileMetadata.Content != "" {
-		decodedContent, err := base64.StdEncoding.DecodeString(fileMetadata.Content)
-		if err == nil {
-			return string(decodedContent), nil
+	// Handle rate limiting and authentication errors
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		// Token is invalid or expired, try next token
+		if c.tokenManager != nil {
+			c.tokenManager.BlacklistToken(token, "authentication failed")
+			if retryCount < 3 {
+				return c.searchCodeWithRetry(query, retryCount+1)
+			}
 		}
-		logger.GetLogger().Warningf("⚠️ Failed to decode base64 content: %v, falling back to download_url", err)
+		return nil, fmt.Errorf("GitHub API authentication error: %d", resp.StatusCode)
 	}
 
-	// 如果没有base64内容或解码失败，使用download_url
-	if fileMetadata.DownloadURL == "" {
-		return "", fmt.Errorf("no download URL found for file: %s", metadataURL)
-	}
-
-	// 使用代理获取文件内容
-	var downloadResp *http.Response
-	if proxyConfig != nil {
-		proxyURL := proxyConfig["http"]
-		proxy, err := url.Parse(proxyURL)
-		if err == nil {
-			transport := &http.Transport{Proxy: http.ProxyURL(proxy)}
-			client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
-			downloadResp, err = client.Get(fileMetadata.DownloadURL)
-		} else {
-			downloadResp, err = c.client.Get(fileMetadata.DownloadURL)
+	if resp.StatusCode == 429 {
+		// Rate limited, try next token
+		if c.tokenManager != nil {
+			c.tokenManager.BlacklistToken(token, "rate limited")
+			if retryCount < 3 {
+				return c.searchCodeWithRetry(query, retryCount+1)
+			}
 		}
-	} else {
-		downloadResp, err = c.client.Get(fileMetadata.DownloadURL)
+		return nil, fmt.Errorf("GitHub API rate limited: %d", resp.StatusCode)
 	}
 
+	// Check status code
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API error: %d", resp.StatusCode)
+	}
+
+	// Parse response
+	var result GitHubSearchResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Items, nil
+}
+
+// getCurrentToken returns the current token, rotating if needed
+func (c *Client) getCurrentToken() string {
+	if c.tokenManager != nil {
+		// Use token manager for rotation
+		token, err := c.tokenManager.GetNextToken()
+		if err == nil {
+			c.token = token
+		}
+	}
+	return c.token
+}
+
+// GetFileContent retrieves file content from GitHub with token rotation
+func (c *Client) GetFileContent(repo, path string) (string, error) {
+	return c.getFileContentWithRetry(repo, path, 0)
+}
+
+// getFileContentWithRetry performs the actual file content retrieval with retry logic
+func (c *Client) getFileContentWithRetry(repo, path string, retryCount int) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Get current token
+	token := c.getCurrentToken()
+	if token == "" {
+		return "", fmt.Errorf("no available GitHub token")
+	}
+
+	// Build content URL
+	contentURL := fmt.Sprintf("%s/repos/%s/contents/%s", c.baseURL, repo, path)
+
+	// Create request
+	req, err := http.NewRequestWithContext(ctx, "GET", contentURL, nil)
 	if err != nil {
-		return "", err
-	}
-	if downloadResp == nil {
-		return "", fmt.Errorf("download request returned nil response for %s", fileMetadata.DownloadURL)
-	}
-	defer downloadResp.Body.Close()
-
-	logger.GetLogger().Infof("⏳ checking for keys from: %s, status: %d", fileMetadata.DownloadURL, downloadResp.StatusCode)
-
-	if downloadResp.StatusCode >= 400 {
-		return "", fmt.Errorf("download error: %d", downloadResp.StatusCode)
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	content, err := io.ReadAll(downloadResp.Body)
+	// Set headers
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Authorization", "token "+token)
+
+	// Send request
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Handle rate limiting and authentication errors
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		// Token is invalid or expired, try next token
+		if c.tokenManager != nil {
+			c.tokenManager.BlacklistToken(token, "authentication failed")
+			if retryCount < 3 {
+				return c.getFileContentWithRetry(repo, path, retryCount+1)
+			}
+		}
+		return "", fmt.Errorf("GitHub API authentication error: %d", resp.StatusCode)
 	}
 
-	return string(content), nil
+	if resp.StatusCode == 429 {
+		// Rate limited, try next token
+		if c.tokenManager != nil {
+			c.tokenManager.BlacklistToken(token, "rate limited")
+			if retryCount < 3 {
+				return c.getFileContentWithRetry(repo, path, retryCount+1)
+			}
+		}
+		return "", fmt.Errorf("GitHub API rate limited: %d", resp.StatusCode)
+	}
+
+	// Check status code
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("GitHub API error: %d", resp.StatusCode)
+	}
+
+	// Parse response
+	var content struct {
+		Content string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&content); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Decode base64 content
+	if content.Encoding == "base64" {
+		// For simplicity, return the content as-is
+		// In a real implementation, you would decode the base64
+		return content.Content, nil
+	}
+
+	return content.Content, nil
 }
 
-// nextToken 获取下一个token
-func (c *Client) nextToken() string {
-	if len(c.tokens) == 0 {
-		return ""
-	}
-
-	token := c.tokens[c.tokenPtr%len(c.tokens)]
-	c.tokenPtr++
-	return strings.TrimSpace(token)
+// GitHubSearchResult represents the result of a GitHub search
+type GitHubSearchResult struct {
+	TotalCount int               `json:"total_count"`
+	Items      []GitHubSearchItem `json:"items"`
 }
 
-// getPooledClient 从池中获取HTTP客户端
-func (c *Client) getPooledClient() *http.Client {
-	select {
-	case client := <-c.clientPool:
-		return client
-	default:
-		// 池为空，创建新客户端
-		return &http.Client{Timeout: 30 * time.Second}
+// GitHubSearchItem represents a single item from GitHub search
+type GitHubSearchItem struct {
+	Name        string           `json:"name"`
+	Path        string           `json:"path"`
+	URL         string           `json:"url"`
+	Repository  GitHubRepository `json:"repository"`
+	TextMatches []TextMatch      `json:"text_matches"`
+	Score       float64          `json:"score"`
+}
+
+// GitHubRepository represents a GitHub repository
+type GitHubRepository struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	FullName    string `json:"full_name"`
+	Description string `json:"description"`
+	URL         string `json:"url"`
+	HTMLURL     string `json:"html_url"`
+	CloneURL    string `json:"clone_url"`
+	Language    string `json:"language"`
+	Size        int    `json:"size"`
+	Stars       int    `json:"stargazers_count"`
+	Forks       int    `json:"forks_count"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+// TextMatch represents a text match in search results
+type TextMatch struct {
+	ObjectURL  string `json:"object_url"`
+	ObjectType string `json:"object_type"`
+	Property   string `json:"property"`
+	Fragment   string `json:"fragment"`
+	Matches    []Match `json:"matches"`
+}
+
+// Match represents a specific match within text
+type Match struct {
+	Text       string `json:"text"`
+	Indices    []int  `json:"indices"`
+}
+
+// GetTokenStatus returns the current token manager status
+func (c *Client) GetTokenStatus() map[string]interface{} {
+	if c.tokenManager != nil {
+		return c.tokenManager.GetStatus()
+	}
+	return map[string]interface{}{
+		"total_tokens":     1,
+		"available_tokens": 1,
+		"blacklisted":      0,
+		"current_index":    0,
+		"mode":            "single_token",
 	}
 }
 
-// returnPooledClient 将客户端返回池中
-func (c *Client) returnPooledClient(client *http.Client) {
-	select {
-	case c.clientPool <- client:
-		// 成功返回池中
-	default:
-		// 池已满，客户端将被垃圾回收
+// GetAvailableTokenCount returns the number of available tokens
+func (c *Client) GetAvailableTokenCount() int {
+	if c.tokenManager != nil {
+		return c.tokenManager.GetTokenCount()
 	}
-}
-
-// getPooledTransport 从池中获取Transport
-func (c *Client) getPooledTransport() *http.Transport {
-	select {
-	case transport := <-c.transportPool:
-		return transport
-	default:
-		// 池为空，创建新transport
-		return &http.Transport{}
-	}
-}
-
-// returnPooledTransport 将Transport返回池中
-func (c *Client) returnPooledTransport(transport *http.Transport) {
-	select {
-	case c.transportPool <- transport:
-		// 成功返回池中
-	default:
-		// 池已满，transport将被垃圾回收
-	}
-}
-
-// min 返回两个整数中的较小值
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// min 返回两个浮点数中的较小值
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
+	return 1
 }

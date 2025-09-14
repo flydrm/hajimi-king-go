@@ -1,0 +1,9 @@
+{"caller":"main.go:182","level":"info","message":"Starting Hajimi King Go v2.0","platforms":null,"timestamp":"2025-09-14T04:11:09Z","version":"2.0.0"}
+{"caller":"main.go:207","level":"info","message":"Starting optimized main loop","timestamp":"2025-09-14T04:11:09Z"}
+{"caller":"main.go:215","level":"info","message":"Enabled platforms","platforms":["gemini"],"timestamp":"2025-09-14T04:11:09Z"}
+{"caller":"main.go:450","level":"info","message":"Shutdown signal received","timestamp":"2025-09-14T04:11:19Z"}
+{"caller":"main.go:226","level":"info","message":"Main loop stopped","timestamp":"2025-09-14T04:11:19Z"}
+{"caller":"main.go:458","level":"info","message":"Application stopped","timestamp":"2025-09-14T04:11:24Z"}
+{"caller":"main.go:182","level":"info","message":"Starting Hajimi King Go v2.0","platforms":null,"timestamp":"2025-09-14T04:12:05Z","version":"2.0.0"}
+{"caller":"main.go:207","level":"info","message":"Starting optimized main loop","timestamp":"2025-09-14T04:12:05Z"}
+{"caller":"main.go:215","level":"info","message":"Enabled platforms","platforms":["gemini"],"timestamp":"2025-09-14T04:12:05Z"}

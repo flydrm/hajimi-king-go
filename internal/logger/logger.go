@@ -1,120 +1,283 @@
 package logger
 
 import (
-	"log"
+	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
-// Logger 日志结构体
+// Logger represents the application logger
 type Logger struct {
-	infoLogger    *log.Logger
-	warningLogger *log.Logger
-	errorLogger   *log.Logger
+	logger *logrus.Logger
+	file   *os.File
 }
 
-var globalLogger *Logger
+// LogLevel represents the log level
+type LogLevel string
 
-// InitLogger 初始化日志
-func InitLogger() *Logger {
-	if globalLogger != nil {
-		return globalLogger
+const (
+	DebugLevel LogLevel = "debug"
+	InfoLevel  LogLevel = "info"
+	WarnLevel  LogLevel = "warn"
+	ErrorLevel LogLevel = "error"
+)
+
+// LogEntry represents a structured log entry
+type LogEntry struct {
+	Timestamp   time.Time              `json:"timestamp"`
+	Level       string                 `json:"level"`
+	Message     string                 `json:"message"`
+	Fields      map[string]interface{} `json:"fields,omitempty"`
+	Caller      string                 `json:"caller,omitempty"`
+	Platform    string                 `json:"platform,omitempty"`
+	Key         string                 `json:"key,omitempty"`
+	Repository  string                 `json:"repository,omitempty"`
+	FilePath    string                 `json:"file_path,omitempty"`
+}
+
+// NewLogger creates a new logger instance
+func NewLogger(level LogLevel, logFile string) (*Logger, error) {
+	logger := logrus.New()
+	
+	// Set log level
+	switch level {
+	case DebugLevel:
+		logger.SetLevel(logrus.DebugLevel)
+	case InfoLevel:
+		logger.SetLevel(logrus.InfoLevel)
+	case WarnLevel:
+		logger.SetLevel(logrus.WarnLevel)
+	case ErrorLevel:
+		logger.SetLevel(logrus.ErrorLevel)
+	default:
+		logger.SetLevel(logrus.InfoLevel)
 	}
-
-	logger := &Logger{
-		infoLogger:    log.New(os.Stdout, "ℹ️  ", log.LstdFlags),
-		warningLogger: log.New(os.Stdout, "⚠️  ", log.LstdFlags),
-		errorLogger:   log.New(os.Stdout, "❌ ", log.LstdFlags),
+	
+	// Set formatter
+	logger.SetFormatter(&logrus.JSONFormatter{
+		TimestampFormat: time.RFC3339,
+		FieldMap: logrus.FieldMap{
+			logrus.FieldKeyTime:  "timestamp",
+			logrus.FieldKeyLevel: "level",
+			logrus.FieldKeyMsg:   "message",
+		},
+	})
+	
+	// Set output
+	var output io.Writer = os.Stdout
+	if logFile != "" {
+		// Create log directory if it doesn't exist
+		logDir := filepath.Dir(logFile)
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create log directory: %w", err)
+		}
+		
+		// Open log file
+		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open log file: %w", err)
+		}
+		
+		// Set output to both file and stdout
+		output = io.MultiWriter(os.Stdout, file)
+		logger.SetOutput(output)
+		
+		return &Logger{
+			logger: logger,
+			file:   file,
+		}, nil
 	}
-
-	globalLogger = logger
-	return logger
+	
+	logger.SetOutput(output)
+	
+	return &Logger{
+		logger: logger,
+		file:   nil,
+	}, nil
 }
 
-// GetLogger 获取全局日志实例
-func GetLogger() *Logger {
-	if globalLogger == nil {
-		return InitLogger()
+// Debug logs a debug message
+func (l *Logger) Debug(message string, fields ...map[string]interface{}) {
+	l.logWithCaller(logrus.DebugLevel, message, fields...)
+}
+
+// Info logs an info message
+func (l *Logger) Info(message string, fields ...map[string]interface{}) {
+	l.logWithCaller(logrus.InfoLevel, message, fields...)
+}
+
+// Warn logs a warning message
+func (l *Logger) Warn(message string, fields ...map[string]interface{}) {
+	l.logWithCaller(logrus.WarnLevel, message, fields...)
+}
+
+// Error logs an error message
+func (l *Logger) Error(message string, fields ...map[string]interface{}) {
+	l.logWithCaller(logrus.ErrorLevel, message, fields...)
+}
+
+// Fatal logs a fatal message and exits
+func (l *Logger) Fatal(message string, fields ...map[string]interface{}) {
+	l.logWithCaller(logrus.FatalLevel, message, fields...)
+	os.Exit(1)
+}
+
+// logWithCaller logs a message with caller information
+func (l *Logger) logWithCaller(level logrus.Level, message string, fields ...map[string]interface{}) {
+	// Get caller information
+	_, file, line, ok := runtime.Caller(2)
+	caller := ""
+	if ok {
+		caller = fmt.Sprintf("%s:%d", filepath.Base(file), line)
 	}
-	return globalLogger
-}
-
-// Info 输出信息日志
-func (l *Logger) Info(msg string) {
-	l.infoLogger.Println(msg)
-}
-
-// Infof 输出格式化信息日志
-func (l *Logger) Infof(format string, args ...interface{}) {
-	l.infoLogger.Printf(format, args...)
-}
-
-// Warning 输出警告日志
-func (l *Logger) Warning(msg string) {
-	l.warningLogger.Println(msg)
-}
-
-// Warningf 输出格式化警告日志
-func (l *Logger) Warningf(format string, args ...interface{}) {
-	l.warningLogger.Printf(format, args...)
-}
-
-// Error 输出错误日志
-func (l *Logger) Error(msg string) {
-	l.errorLogger.Println(msg)
-}
-
-// Errorf 输出格式化错误日志
-func (l *Logger) Errorf(format string, args ...interface{}) {
-	l.errorLogger.Printf(format, args...)
-}
-
-// LogSystemStartup 记录系统启动信息
-func (l *Logger) LogSystemStartup() {
-	l.Info("============================================================")
-	l.Info("🚀 HAJIMI KING STARTING")
-	l.Info("============================================================")
-	l.Infof("⏰ Started at: %s", time.Now().Format("2006-01-02 15:04:05"))
-}
-
-// LogSystemReady 记录系统就绪信息
-func (l *Logger) LogSystemReady() {
-	l.Info("✅ System ready - Starting king")
-	l.Info("============================================================")
-}
-
-// LogSystemShutdown 记录系统关闭信息
-func (l *Logger) LogSystemShutdown(validKeys, rateLimitedKeys int) {
-	l.Info("⛔ Interrupted by user")
-	l.Infof("📊 Final stats - Valid keys: %d, Rate limited: %d", validKeys, rateLimitedKeys)
-	l.Info("🔚 Shutting down...")
-}
-
-// LogLoopStart 记录循环开始
-func (l *Logger) LogLoopStart(loopNumber int) {
-	l.Infof("🔄 Loop #%d - %s", loopNumber, time.Now().Format("15:04:05"))
-}
-
-// LogLoopComplete 记录循环完成
-func (l *Logger) LogLoopComplete(loopNumber, processedFiles, validKeys, rateLimitedKeys int) {
-	l.Infof("🏁 Loop #%d complete - Processed %d files | Total valid: %d | Total rate limited: %d", 
-		loopNumber, processedFiles, validKeys, rateLimitedKeys)
-}
-
-// LogQueryProgress 记录查询进度
-func (l *Logger) LogQueryProgress(queryIndex, totalQueries int, processed, valid, rateLimited int) {
-	l.Infof("✅ Query %d/%d complete - Processed: %d, Valid: +%d, Rate limited: +%d", 
-		queryIndex, totalQueries, processed, valid, rateLimited)
-}
-
-// LogSkipStats 记录跳过统计
-func (l *Logger) LogSkipStats(stats map[string]int) {
-	totalSkipped := 0
-	for _, count := range stats {
-		totalSkipped += count
+	
+	// Merge fields
+	allFields := make(map[string]interface{})
+	for _, fieldMap := range fields {
+		for k, v := range fieldMap {
+			allFields[k] = v
+		}
 	}
-	if totalSkipped > 0 {
-		l.Infof("📊 Skipped %d items - Time: %d, Duplicate: %d, Age: %d, Docs: %d", 
-			totalSkipped, stats["time_filter"], stats["sha_duplicate"], stats["age_filter"], stats["doc_filter"])
+	
+	// Add caller information
+	if caller != "" {
+		allFields["caller"] = caller
+	}
+	
+	// Log with fields
+	l.logger.WithFields(allFields).Log(level, message)
+}
+
+// LogKeyDiscovery logs a key discovery event
+func (l *Logger) LogKeyDiscovery(platform, key, repository, filePath string, isValid bool, confidence float64) {
+	fields := map[string]interface{}{
+		"platform":   platform,
+		"key":        l.maskKey(key),
+		"repository": repository,
+		"file_path":  filePath,
+		"is_valid":   isValid,
+		"confidence": confidence,
+		"event_type": "key_discovery",
+	}
+	
+	if isValid {
+		l.Info("Valid key discovered", fields)
+	} else {
+		l.Info("Invalid key discovered", fields)
+	}
+}
+
+// LogKeyValidation logs a key validation event
+func (l *Logger) LogKeyValidation(platform, key string, isValid bool, errorMsg string) {
+	fields := map[string]interface{}{
+		"platform":   platform,
+		"key":        l.maskKey(key),
+		"is_valid":   isValid,
+		"error":      errorMsg,
+		"event_type": "key_validation",
+	}
+	
+	if isValid {
+		l.Info("Key validation successful", fields)
+	} else {
+		l.Warn("Key validation failed", fields)
+	}
+}
+
+// LogPlatformEvent logs a platform-specific event
+func (l *Logger) LogPlatformEvent(platform, eventType, message string, fields ...map[string]interface{}) {
+	allFields := make(map[string]interface{})
+	for _, fieldMap := range fields {
+		for k, v := range fieldMap {
+			allFields[k] = v
+		}
+	}
+	
+	allFields["platform"] = platform
+	allFields["event_type"] = eventType
+	
+	l.Info(message, allFields)
+}
+
+// LogSystemEvent logs a system event
+func (l *Logger) LogSystemEvent(eventType, message string, fields ...map[string]interface{}) {
+	allFields := make(map[string]interface{})
+	for _, fieldMap := range fields {
+		for k, v := range fieldMap {
+			allFields[k] = v
+		}
+	}
+	
+	allFields["event_type"] = "system"
+	allFields["sub_type"] = eventType
+	
+	l.Info(message, allFields)
+}
+
+// LogPerformance logs a performance metric
+func (l *Logger) LogPerformance(metric string, value float64, unit string, fields ...map[string]interface{}) {
+	allFields := make(map[string]interface{})
+	for _, fieldMap := range fields {
+		for k, v := range fieldMap {
+			allFields[k] = v
+		}
+	}
+	
+	allFields["metric"] = metric
+	allFields["value"] = value
+	allFields["unit"] = unit
+	allFields["event_type"] = "performance"
+	
+	l.Info("Performance metric", allFields)
+}
+
+// maskKey masks sensitive parts of a key for logging
+func (l *Logger) maskKey(key string) string {
+	if len(key) <= 8 {
+		return "***"
+	}
+	return key[:4] + "***" + key[len(key)-4:]
+}
+
+// Close closes the logger and any open files
+func (l *Logger) Close() error {
+	if l.file != nil {
+		return l.file.Close()
+	}
+	return nil
+}
+
+// GetLogLevel returns the current log level
+func (l *Logger) GetLogLevel() LogLevel {
+	switch l.logger.GetLevel() {
+	case logrus.DebugLevel:
+		return DebugLevel
+	case logrus.InfoLevel:
+		return InfoLevel
+	case logrus.WarnLevel:
+		return WarnLevel
+	case logrus.ErrorLevel:
+		return ErrorLevel
+	default:
+		return InfoLevel
+	}
+}
+
+// SetLogLevel sets the log level
+func (l *Logger) SetLogLevel(level LogLevel) {
+	switch level {
+	case DebugLevel:
+		l.logger.SetLevel(logrus.DebugLevel)
+	case InfoLevel:
+		l.logger.SetLevel(logrus.InfoLevel)
+	case WarnLevel:
+		l.logger.SetLevel(logrus.WarnLevel)
+	case ErrorLevel:
+		l.logger.SetLevel(logrus.ErrorLevel)
 	}
 }

@@ -8,273 +8,155 @@ import (
 	"strings"
 	"time"
 
-	"hajimi-king-go/internal/config"
-	"hajimi-king-go/internal/logger"
-	"hajimi-king-go/internal/models"
+	"hajimi-king-go-v2/internal/config"
+	"hajimi-king-go-v2/internal/models"
 )
 
-// FileManager 文件管理器
+// FileManager manages file operations
 type FileManager struct {
 	config *config.Config
 }
 
-// NewFileManager 创建文件管理器
-func NewFileManager(cfg *config.Config) *FileManager {
+// NewFileManager creates a new file manager
+func NewFileManager(cfg *config.Config) (*FileManager, error) {
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll(cfg.DataPath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
+	}
+
 	return &FileManager{
 		config: cfg,
-	}
+	}, nil
 }
 
-// Check 检查文件管理器是否就绪
-func (fm *FileManager) Check() bool {
-	// 创建数据目录
-	if err := os.MkdirAll(fm.config.DataPath, 0755); err != nil {
-		logger.GetLogger().Errorf("❌ Failed to create data directory: %v", err)
-		return false
+// SaveValidKeysForPlatform saves valid keys for a specific platform
+func (fm *FileManager) SaveValidKeysForPlatform(platform, repoName, filePath, fileURL string, keys []string) error {
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("%s_%s_%s.txt", fm.config.ValidKeyPrefix, platform, timestamp)
+	fullPath := filepath.Join(fm.config.DataPath, filename)
+
+	// Create content
+	content := fmt.Sprintf("Platform: %s\nRepository: %s\nFile: %s\nURL: %s\nKeys:\n", platform, repoName, filePath, fileURL)
+	for _, key := range keys {
+		content += fmt.Sprintf("%s\n", key)
 	}
 
-	// 创建子目录
-	subdirs := []string{"keys", "logs"}
-	for _, subdir := range subdirs {
-		fullPath := filepath.Join(fm.config.DataPath, subdir)
-		if err := os.MkdirAll(fullPath, 0755); err != nil {
-			logger.GetLogger().Errorf("❌ Failed to create directory %s: %v", fullPath, err)
-			return false
-		}
+	// Write file
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write valid keys file: %w", err)
 	}
 
-	logger.GetLogger().Infof("✅ Data directories created: %s", fm.config.DataPath)
-	return true
+	// Save detailed log
+	detailFilename := fmt.Sprintf("%s_%s_%s.log", fm.config.ValidKeyDetailPrefix, platform, timestamp)
+	detailPath := filepath.Join(fm.config.DataPath, detailFilename)
+
+	detailContent := fmt.Sprintf("[%s] Valid keys found for platform %s\n", time.Now().Format(time.RFC3339), platform)
+	detailContent += fmt.Sprintf("Repository: %s\n", repoName)
+	detailContent += fmt.Sprintf("File: %s\n", filePath)
+	detailContent += fmt.Sprintf("URL: %s\n", fileURL)
+	detailContent += fmt.Sprintf("Keys count: %d\n", len(keys))
+	detailContent += "---\n"
+
+	if err := os.WriteFile(detailPath, []byte(detailContent), 0644); err != nil {
+		return fmt.Errorf("failed to write detail log: %w", err)
+	}
+
+	return nil
 }
 
-// GetSearchQueries 获取搜索查询列表
-func (fm *FileManager) GetSearchQueries() []string {
-	queriesFile := filepath.Join(fm.config.DataPath, fm.config.QueriesFile)
-	content, err := os.ReadFile(queriesFile)
+// SaveRateLimitedKeysForPlatform saves rate limited keys for a specific platform
+func (fm *FileManager) SaveRateLimitedKeysForPlatform(platform, repoName, filePath, fileURL string, keys []string) error {
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("%s_%s_%s.txt", fm.config.RateLimitedPrefix, platform, timestamp)
+	fullPath := filepath.Join(fm.config.DataPath, filename)
+
+	// Create content
+	content := fmt.Sprintf("Platform: %s\nRepository: %s\nFile: %s\nURL: %s\nRate Limited Keys:\n", platform, repoName, filePath, fileURL)
+	for _, key := range keys {
+		content += fmt.Sprintf("%s\n", key)
+	}
+
+	// Write file
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write rate limited keys file: %w", err)
+	}
+
+	return nil
+}
+
+// LoadCheckpoint loads checkpoint data
+func (fm *FileManager) LoadCheckpoint() (*models.Checkpoint, error) {
+	if _, err := os.Stat(fm.config.CheckpointPath); os.IsNotExist(err) {
+		return &models.Checkpoint{
+			LastScanTime:  time.Now(),
+			ProcessedFiles: make(map[string]bool),
+		}, nil
+	}
+
+	data, err := os.ReadFile(fm.config.CheckpointPath)
 	if err != nil {
-		logger.GetLogger().Errorf("❌ Failed to read queries file: %v", err)
-		return []string{}
+		return nil, fmt.Errorf("failed to read checkpoint file: %w", err)
 	}
 
-	lines := strings.Split(string(content), "\n")
+	var checkpoint models.Checkpoint
+	if err := json.Unmarshal(data, &checkpoint); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal checkpoint: %w", err)
+	}
+
+	return &checkpoint, nil
+}
+
+// SaveCheckpoint saves checkpoint data
+func (fm *FileManager) SaveCheckpoint(checkpoint *models.Checkpoint) error {
+	data, err := json.MarshalIndent(checkpoint, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal checkpoint: %w", err)
+	}
+
+	if err := os.WriteFile(fm.config.CheckpointPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write checkpoint file: %w", err)
+	}
+
+	return nil
+}
+
+// LoadSearchQueries loads search queries from file
+func (fm *FileManager) LoadSearchQueries() ([]string, error) {
+	if _, err := os.Stat(fm.config.QueriesPath); os.IsNotExist(err) {
+		// Create default queries file
+		defaultQueries := []string{
+			"AIza",
+			"sk-or-",
+			"sk-",
+			"api_key",
+			"API_KEY",
+			"secret",
+			"token",
+		}
+		return defaultQueries, nil
+	}
+
+	data, err := os.ReadFile(fm.config.QueriesPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read queries file: %w", err)
+	}
+
 	var queries []string
-	for _, line := range lines {
+	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
+		if line != "" {
 			queries = append(queries, line)
 		}
 	}
 
-	logger.GetLogger().Infof("📋 Loaded %d search queries", len(queries))
+	return queries, nil
+}
+
+// GetSearchQueries returns search queries
+func (fm *FileManager) GetSearchQueries() []string {
+	queries, err := fm.LoadSearchQueries()
+	if err != nil {
+		return []string{"AIza", "sk-or-", "sk-"}
+	}
 	return queries
-}
-
-// SaveCheckpoint 保存检查点
-func (fm *FileManager) SaveCheckpoint(checkpoint *models.Checkpoint) error {
-	checkpointFile := filepath.Join(fm.config.DataPath, fm.config.ScannedSHAsFile)
-	data, err := json.MarshalIndent(checkpoint, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal checkpoint: %v", err)
-	}
-
-	if err := os.WriteFile(checkpointFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write checkpoint file: %v", err)
-	}
-
-	logger.GetLogger().Infof("💾 Checkpoint saved: %s", checkpointFile)
-	return nil
-}
-
-// LoadCheckpoint 加载检查点
-func (fm *FileManager) LoadCheckpoint() (*models.Checkpoint, error) {
-	checkpointFile := filepath.Join(fm.config.DataPath, fm.config.ScannedSHAsFile)
-	
-	// 如果文件不存在，返回空的检查点
-	if _, err := os.Stat(checkpointFile); os.IsNotExist(err) {
-		return &models.Checkpoint{
-			LastScanTime:     "",
-			ScannedSHAs:      []string{},
-			ProcessedQueries: []string{},
-			WaitSendBalancer: []string{},
-			WaitSendGPTLoad:  []string{},
-		}, nil
-	}
-
-	content, err := os.ReadFile(checkpointFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read checkpoint file: %v", err)
-	}
-
-	var checkpoint models.Checkpoint
-	if err := json.Unmarshal(content, &checkpoint); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal checkpoint: %v", err)
-	}
-
-	logger.GetLogger().Infof("💾 Checkpoint loaded: %d scanned SHAs, %d processed queries", 
-		len(checkpoint.ScannedSHAs), len(checkpoint.ProcessedQueries))
-	return &checkpoint, nil
-}
-
-// SaveValidKeys 保存有效密钥
-func (fm *FileManager) SaveValidKeys(repoName, filePath, fileURL string, keys []string) error {
-	timestamp := time.Now().Format("20060102_150405")
-	filename := fmt.Sprintf("%s%s.txt", fm.config.ValidKeyPrefix, timestamp)
-	fullPath := filepath.Join(fm.config.DataPath, filename)
-
-	// 创建文件内容
-	var content strings.Builder
-	for _, key := range keys {
-		content.WriteString(fmt.Sprintf("%s|%s|%s|%s\n", key, repoName, filePath, fileURL))
-	}
-
-	if err := os.WriteFile(fullPath, []byte(content.String()), 0644); err != nil {
-		return fmt.Errorf("failed to save valid keys: %v", err)
-	}
-
-	// 保存详细信息
-	detailFilename := fmt.Sprintf("%s%s.log", fm.config.ValidKeyDetailPrefix, timestamp)
-	detailFullPath := filepath.Join(fm.config.DataPath, detailFilename)
-	detailContent := fmt.Sprintf("[%s] Found %d valid keys in %s/%s\n%s\n", 
-		time.Now().Format("2006-01-02 15:04:05"), len(keys), repoName, filePath, content.String())
-
-	if err := os.WriteFile(detailFullPath, []byte(detailContent), 0644); err != nil {
-		logger.GetLogger().Warningf("⚠️ Failed to save detail log: %v", err)
-	}
-
-	logger.GetLogger().Infof("💾 Saved %d valid keys to %s", len(keys), filename)
-	return nil
-}
-
-// SaveRateLimitedKeys 保存被限流的密钥
-func (fm *FileManager) SaveRateLimitedKeys(repoName, filePath, fileURL string, keys []string) error {
-	timestamp := time.Now().Format("20060102_150405")
-	filename := fmt.Sprintf("%s%s.txt", fm.config.RateLimitedKeyPrefix, timestamp)
-	fullPath := filepath.Join(fm.config.DataPath, filename)
-
-	// 创建文件内容
-	var content strings.Builder
-	for _, key := range keys {
-		content.WriteString(fmt.Sprintf("%s|%s|%s|%s\n", key, repoName, filePath, fileURL))
-	}
-
-	if err := os.WriteFile(fullPath, []byte(content.String()), 0644); err != nil {
-		return fmt.Errorf("failed to save rate limited keys: %v", err)
-	}
-
-	// 保存详细信息
-	detailFilename := fmt.Sprintf("%s%s.log", fm.config.RateLimitedKeyDetailPrefix, timestamp)
-	detailFullPath := filepath.Join(fm.config.DataPath, detailFilename)
-	detailContent := fmt.Sprintf("[%s] Found %d rate limited keys in %s/%s\n%s\n", 
-		time.Now().Format("2006-01-02 15:04:05"), len(keys), repoName, filePath, content.String())
-
-	if err := os.WriteFile(detailFullPath, []byte(detailContent), 0644); err != nil {
-		logger.GetLogger().Warningf("⚠️ Failed to save detail log: %v", err)
-	}
-
-	logger.GetLogger().Infof("💾 Saved %d rate limited keys to %s", len(keys), filename)
-	return nil
-}
-
-// UpdateDynamicFilenames 更新动态文件名
-func (fm *FileManager) UpdateDynamicFilenames() {
-	// 这个函数可以用于实现动态文件名更新逻辑
-	// 目前保持为空，根据需要实现
-}
-
-// NormalizeQuery 规范化查询字符串
-func (fm *FileManager) NormalizeQuery(query string) string {
-	query = strings.Join(strings.Fields(query), " ")
-
-	var parts []string
-	i := 0
-	for i < len(query) {
-		if query[i] == '"' {
-			endQuote := strings.Index(query[i+1:], "\"")
-			if endQuote != -1 {
-				parts = append(parts, query[i:i+endQuote+2])
-				i += endQuote + 2
-			} else {
-				parts = append(parts, string(query[i]))
-				i++
-			}
-		} else if query[i] == ' ' {
-			i++
-		} else {
-			start := i
-			for i < len(query) && query[i] != ' ' {
-				i++
-			}
-			parts = append(parts, query[start:i])
-		}
-	}
-
-	var quotedStrings, languageParts, filenameParts, pathParts, otherParts []string
-	for _, part := range parts {
-		if strings.HasPrefix(part, "\"") && strings.HasSuffix(part, "\"") {
-			quotedStrings = append(quotedStrings, part)
-		} else if strings.HasPrefix(part, "language:") {
-			languageParts = append(languageParts, part)
-		} else if strings.HasPrefix(part, "filename:") {
-			filenameParts = append(filenameParts, part)
-		} else if strings.HasPrefix(part, "path:") {
-			pathParts = append(pathParts, part)
-		} else if strings.TrimSpace(part) != "" {
-			otherParts = append(otherParts, part)
-		}
-	}
-
-	// 排序并重新组合
-	var normalizedParts []string
-	normalizedParts = append(normalizedParts, quotedStrings...)
-	normalizedParts = append(normalizedParts, otherParts...)
-	normalizedParts = append(normalizedParts, languageParts...)
-	normalizedParts = append(normalizedParts, filenameParts...)
-	normalizedParts = append(normalizedParts, pathParts...)
-
-	return strings.Join(normalizedParts, " ")
-}
-
-// GetFilesByPrefix 获取指定前缀的文件列表
-func (fm *FileManager) GetFilesByPrefix(prefix string) ([]string, error) {
-	var files []string
-	
-	// 处理前缀路径，如果包含子目录
-	var dirPath string
-	var filePrefix string
-	
-	if strings.Contains(prefix, "/") {
-		// 包含子目录，如 "keys/keys_valid_"
-		parts := strings.SplitN(prefix, "/", 2)
-		dirPath = filepath.Join(fm.config.DataPath, parts[0])
-		filePrefix = parts[1]
-	} else {
-		// 不包含子目录，直接在数据目录中查找
-		dirPath = fm.config.DataPath
-		filePrefix = prefix
-	}
-	
-	// 读取目录中的所有文件
-	entries, err := os.ReadDir(dirPath)
-	if err != nil {
-		// 如果目录不存在，返回空列表而不是错误
-		if os.IsNotExist(err) {
-			logger.GetLogger().Infof("📁 Directory not found: %s", dirPath)
-			return files, nil
-		}
-		return nil, fmt.Errorf("failed to read directory %s: %v", dirPath, err)
-	}
-	
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), filePrefix) {
-			files = append(files, filepath.Join(dirPath, entry.Name()))
-		}
-	}
-	
-	logger.GetLogger().Infof("📁 Found %d files with prefix '%s' in %s", len(files), filePrefix, dirPath)
-	return files, nil
-}
-
-// ReadFileContent 读取文件内容
-func (fm *FileManager) ReadFileContent(filePath string) ([]byte, error) {
-	return os.ReadFile(filePath)
 }

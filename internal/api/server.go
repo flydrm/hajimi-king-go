@@ -4,610 +4,203 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"hajimi-king-go/internal/config"
-	"hajimi-king-go/internal/filemanager"
-	"hajimi-king-go/internal/logger"
-	"hajimi-king-go/internal/models"
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 )
 
-// APIServer API服务器
-type APIServer struct {
-	config       *config.Config
-	fileManager  *filemanager.FileManager
-	httpServer   *http.Server
-	keysCache    *KeysCache
-	jwtSecret    string
+// Server represents the API server
+type Server struct {
+	router *mux.Router
+	port   int
+	secret string
 }
 
-// KeysCache 密钥缓存
-type KeysCache struct {
-	ValidKeys       []models.KeyInfo `json:"valid_keys"`
-	RateLimitedKeys []models.KeyInfo `json:"rate_limited_keys"`
-	LastUpdated     time.Time        `json:"last_updated"`
-	cacheMutex      sync.RWMutex     `json:"-"`
-}
-
-// APIResponse API响应结构
-type APIResponse struct {
-	Success bool        `json:"success"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
-}
-
-// KeysRequest 获取密钥列表的请求参数
-type KeysRequest struct {
-	Page       int    `json:"page" form:"page"`
-	PageSize   int    `json:"page_size" form:"page_size"`
-	KeyType    string `json:"key_type" form:"key_type"` // "valid", "rate_limited", "all"
-	Search     string `json:"search" form:"search"`
-	Repository string `json:"repository" form:"repository"`
-}
-
-// KeysResponse 密钥列表响应
-type KeysResponse struct {
-	Keys       []models.KeyInfo `json:"keys"`
-	Total      int              `json:"total"`
-	Page       int              `json:"page"`
-	PageSize   int              `json:"page_size"`
-	TotalPages int              `json:"total_pages"`
-}
-
-// StatsResponse 统计信息响应
-type StatsResponse struct {
-	ValidKeysCount       int `json:"valid_keys_count"`
-	RateLimitedKeysCount int `json:"rate_limited_keys_count"`
-	TotalKeysCount       int `json:"total_keys_count"`
-}
-
-// NewAPIServer 创建API服务器
-func NewAPIServer(cfg *config.Config, fm *filemanager.FileManager) *APIServer {
-	// 生成JWT密钥
-	jwtSecret := cfg.APIAuthKey
-	if jwtSecret == "" {
-		jwtSecret = "hajimi-king-default-secret"
+// NewServer creates a new API server
+func NewServer(port int, secret string) *Server {
+	router := mux.NewRouter()
+	
+	server := &Server{
+		router: router,
+		port:   port,
+		secret: secret,
 	}
 	
-	return &APIServer{
-		config:      cfg,
-		fileManager: fm,
-		keysCache:   &KeysCache{},
-		jwtSecret:   jwtSecret,
-	}
+	server.setupRoutes()
+	return server
 }
 
-// Start 启动API服务器
-func (s *APIServer) Start() error {
-	mux := http.NewServeMux()
+// setupRoutes sets up API routes
+func (s *Server) setupRoutes() {
+	// CORS middleware
+	s.router.Use(handlers.CORS(
+		handlers.AllowedOrigins([]string{"*"}),
+		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
+		handlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
+	))
+
+	// Health check
+	s.router.HandleFunc("/health", s.healthHandler).Methods("GET")
 	
-	// 设置路由
-	mux.HandleFunc("/api/auth", s.handleAuth)
-	mux.HandleFunc("/api/keys", s.authMiddleware(s.corsMiddleware(s.handleGetKeys)))
-	mux.HandleFunc("/api/stats", s.authMiddleware(s.corsMiddleware(s.handleGetStats)))
-	mux.HandleFunc("/api/health", s.authMiddleware(s.corsMiddleware(s.handleHealthCheck)))
-	mux.HandleFunc("/api/debug/files", s.authMiddleware(s.corsMiddleware(s.handleDebugFiles)))
-	mux.HandleFunc("/", s.serveStaticFiles)
+	// API routes
+	api := s.router.PathPrefix("/api").Subrouter()
 	
-	// 创建HTTP服务器
-	s.httpServer = &http.Server{
-		Addr:    ":" + strconv.Itoa(s.config.APIPort),
-		Handler: mux,
-	}
+	// Authentication
+	api.HandleFunc("/auth/login", s.loginHandler).Methods("POST")
 	
-	logger.GetLogger().Infof("🚀 API server starting on port %d", s.config.APIPort)
+	// Protected routes
+	protected := api.PathPrefix("/").Subrouter()
+	protected.Use(s.authMiddleware)
 	
-	// 启动缓存更新
-	go s.startCacheUpdater()
+	protected.HandleFunc("/keys", s.getKeysHandler).Methods("GET")
+	protected.HandleFunc("/stats", s.getStatsHandler).Methods("GET")
+	protected.HandleFunc("/metrics", s.getMetricsHandler).Methods("GET")
 	
-	return s.httpServer.ListenAndServe()
+	// Serve static files
+	s.router.PathPrefix("/").Handler(http.FileServer(http.Dir("./web/")))
 }
 
-// Stop 停止API服务器
-func (s *APIServer) Stop() error {
-	if s.httpServer != nil {
-		return s.httpServer.Close()
-	}
-	return nil
+// Start starts the server
+func (s *Server) Start() error {
+	addr := fmt.Sprintf(":%d", s.port)
+	return http.ListenAndServe(addr, s.router)
 }
 
-// handleGetKeys 处理获取密钥列表的请求
-func (s *APIServer) handleGetKeys(w http.ResponseWriter, r *http.Request) {
+// healthHandler handles health check requests
+func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
-	// 只处理GET请求
-	if r.Method != http.MethodGet {
-		s.writeErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	
-	// 解析查询参数
-	query := r.URL.Query()
-	page, _ := strconv.Atoi(query.Get("page"))
-	if page <= 0 {
-		page = 1
-	}
-	
-	pageSize, _ := strconv.Atoi(query.Get("page_size"))
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 20
-	}
-	
-	keyType := query.Get("key_type")
-	if keyType == "" {
-		keyType = "all"
-	}
-	
-	search := query.Get("search")
-	repository := query.Get("repository")
-	
-	// 获取过滤后的密钥
-	keys, total := s.getFilteredKeys(keyType, search, repository)
-	
-	// 计算分页
-	start := (page - 1) * pageSize
-	end := start + pageSize
-	if start > len(keys) {
-		start = len(keys)
-	}
-	if end > len(keys) {
-		end = len(keys)
-	}
-	
-	pagedKeys := keys[start:end]
-	totalPages := (total + pageSize - 1) / pageSize
-	
-	response := APIResponse{
-		Success: true,
-		Message: "Keys retrieved successfully",
-		Data: KeysResponse{
-			Keys:       pagedKeys,
-			Total:      total,
-			Page:       page,
-			PageSize:   pageSize,
-			TotalPages: totalPages,
-		},
-	}
-	
-	json.NewEncoder(w).Encode(response)
-}
-
-// handleGetStats 处理获取统计信息的请求
-func (s *APIServer) handleGetStats(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	
-	if r.Method != http.MethodGet {
-		s.writeErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	
-	s.updateCacheIfNeeded()
-	
-	// 使用读写锁保护缓存访问
-	s.keysCache.cacheMutex.RLock()
-	defer s.keysCache.cacheMutex.RUnlock()
-	
-	response := APIResponse{
-		Success: true,
-		Message: "Stats retrieved successfully",
-		Data: StatsResponse{
-			ValidKeysCount:       len(s.keysCache.ValidKeys),
-			RateLimitedKeysCount: len(s.keysCache.RateLimitedKeys),
-			TotalKeysCount:       len(s.keysCache.ValidKeys) + len(s.keysCache.RateLimitedKeys),
-		},
-	}
-	
-	json.NewEncoder(w).Encode(response)
-}
-
-// handleHealthCheck 处理健康检查请求
-func (s *APIServer) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	
-	response := APIResponse{
-		Success: true,
-		Message: "API server is running",
-		Data: map[string]string{
-			"status": "healthy",
-			"time":   time.Now().Format(time.RFC3339),
-		},
-	}
-	
-	json.NewEncoder(w).Encode(response)
-}
-
-// getFilteredKeys 获取过滤后的密钥列表
-func (s *APIServer) getFilteredKeys(keyType, search, repository string) ([]models.KeyInfo, int) {
-	s.updateCacheIfNeeded()
-	
-	// 使用读写锁保护缓存访问
-	s.keysCache.cacheMutex.RLock()
-	defer s.keysCache.cacheMutex.RUnlock()
-	
-	var allKeys []models.KeyInfo
-	
-	switch keyType {
-	case "valid":
-		allKeys = s.keysCache.ValidKeys
-	case "rate_limited":
-		allKeys = s.keysCache.RateLimitedKeys
-	default:
-		// 预分配切片容量
-		allKeys = make([]models.KeyInfo, 0, len(s.keysCache.ValidKeys)+len(s.keysCache.RateLimitedKeys))
-		allKeys = append(allKeys, s.keysCache.ValidKeys...)
-		allKeys = append(allKeys, s.keysCache.RateLimitedKeys...)
-	}
-	
-	// 预分配过滤结果切片
-	filteredKeys := make([]models.KeyInfo, 0, len(allKeys))
-	
-	// 应用过滤
-	for _, key := range allKeys {
-		// 搜索过滤
-		if search != "" {
-			searchLower := strings.ToLower(search)
-			if !strings.Contains(strings.ToLower(key.Key), searchLower) &&
-				!strings.Contains(strings.ToLower(key.Repository), searchLower) &&
-				!strings.Contains(strings.ToLower(key.FilePath), searchLower) {
-				continue
-			}
-		}
-		
-		// 仓库过滤
-		if repository != "" {
-			if !strings.Contains(strings.ToLower(key.Repository), strings.ToLower(repository)) {
-				continue
-			}
-		}
-		
-		filteredKeys = append(filteredKeys, key)
-	}
-	
-	// 按发现时间倒序排序（最新的在前）
-	sort.Slice(filteredKeys, func(i, j int) bool {
-		return filteredKeys[i].FoundAt.After(filteredKeys[j].FoundAt)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "healthy",
+		"timestamp": time.Now().Format(time.RFC3339),
 	})
-	
-	return filteredKeys, len(filteredKeys)
 }
 
-// updateCacheIfNeeded 更新缓存（如果需要）
-func (s *APIServer) updateCacheIfNeeded() {
-	if s.keysCache.LastUpdated.IsZero() || time.Since(s.keysCache.LastUpdated) > 10*time.Minute {
-		s.updateCache()
-	}
-}
-
-// updateCache 更新密钥缓存
-func (s *APIServer) updateCache() {
-	s.keysCache.cacheMutex.Lock()
-	defer s.keysCache.cacheMutex.Unlock()
-	
-	validKeys := s.loadKeysFromFile(s.config.ValidKeyPrefix)
-	rateLimitedKeys := s.loadKeysFromFile(s.config.RateLimitedKeyPrefix)
-	
-	// 设置rate_limited标志
-	for i := range rateLimitedKeys {
-		rateLimitedKeys[i].RateLimited = true
+// loginHandler handles login requests
+func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
+	var loginReq struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
 	}
 	
-	// 限制缓存大小，防止内存泄漏
-	if len(validKeys) > 5000 {
-		validKeys = validKeys[:5000]
-	}
-	if len(rateLimitedKeys) > 5000 {
-		rateLimitedKeys = rateLimitedKeys[:5000]
-	}
-	
-	s.keysCache.ValidKeys = validKeys
-	s.keysCache.RateLimitedKeys = rateLimitedKeys
-	s.keysCache.LastUpdated = time.Now()
-	
-	logger.GetLogger().Infof("📊 Cache updated: %d valid keys, %d rate limited keys", 
-		len(validKeys), len(rateLimitedKeys))
-}
-
-// loadKeysFromFile 从文件加载密钥
-func (s *APIServer) loadKeysFromFile(prefix string) []models.KeyInfo {
-	keys := []models.KeyInfo{}
-	
-	// 获取所有匹配的文件
-	files, err := s.fileManager.GetFilesByPrefix(prefix)
-	if err != nil {
-		logger.GetLogger().Errorf("❌ Failed to get files with prefix %s: %v", prefix, err)
-		return keys
-	}
-	
-	for _, file := range files {
-		fileKeys, err := s.parseKeyFile(file)
-		if err != nil {
-			logger.GetLogger().Warningf("⚠️ Failed to parse file %s: %v", file, err)
-			continue
-		}
-		keys = append(keys, fileKeys...)
-	}
-	
-	return keys
-}
-
-// extractTimeFromFilename 从文件名中提取时间戳
-func (s *APIServer) extractTimeFromFilename(filePath string) time.Time {
-	// 获取文件名
-	filename := filepath.Base(filePath)
-	
-	// 定义正则表达式匹配时间戳模式
-	// 匹配格式：keys_valid_YYYYMMDD_HHMMSS.txt 或 key_429_YYYYMMDD_HHMMSS.txt
-	re := regexp.MustCompile(`_(\d{8})_(\d{6})\.txt$`)
-	matches := re.FindStringSubmatch(filename)
-	
-	if len(matches) == 3 {
-		dateStr := matches[1]
-		timeStr := matches[2]
-		
-		// 解析时间：YYYYMMDD_HHMMSS，使用本地时区
-		layout := "20060102 150405"
-		timeStrFull := dateStr + " " + timeStr
-		
-		// 直接使用本地时区解析时间，不进行UTC转换
-		parsedTime, err := time.ParseInLocation(layout, timeStrFull, time.Local)
-		if err == nil {
-			return parsedTime
-		}
-	}
-	
-	// 如果无法解析时间，返回文件的修改时间
-	if fileInfo, err := os.Stat(filePath); err == nil {
-		return fileInfo.ModTime()
-	}
-	
-	// 如果都无法获取，返回当前时间
-	return time.Now()
-}
-
-// parseKeyFile 解析密钥文件
-func (s *APIServer) parseKeyFile(filePath string) ([]models.KeyInfo, error) {
-	content, err := s.fileManager.ReadFileContent(filePath)
-	if err != nil {
-		return nil, err
-	}
-	
-	keys := []models.KeyInfo{}
-	lines := strings.Split(string(content), "\n")
-	
-	// logger.GetLogger().Infof("📄 Parsing file %s with %d lines", filePath, len(lines))
-	
-	for lineIndex, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		
-		// 尝试用 | 分割
-		parts := strings.Split(line, "|")
-		if len(parts) >= 4 {
-			key := models.KeyInfo{
-				Key:        strings.TrimSpace(parts[0]),
-				Repository: strings.TrimSpace(parts[1]),
-				FilePath:   strings.TrimSpace(parts[2]),
-				FileURL:    strings.TrimSpace(parts[3]),
-				FoundAt:    s.extractTimeFromFilename(filePath), // 从文件名中提取准确的时间戳
-			}
-			keys = append(keys, key)
-		} else {
-			// 如果分割失败，尝试其他格式
-			logger.GetLogger().Warningf("⚠️ Invalid format in %s line %d: %s", filePath, lineIndex+1, line)
-		}
-	}
-	
-	// logger.GetLogger().Infof("📄 Parsed %d keys from file %s", len(keys), filePath)
-	return keys, nil
-}
-
-// startCacheUpdater 启动缓存更新器
-func (s *APIServer) startCacheUpdater() {
-	ticker := time.NewTicker(2 * time.Minute)
-	defer ticker.Stop()
-	
-	for range ticker.C {
-		s.updateCache()
-	}
-}
-
-// serveStaticFiles 提供静态文件服务
-func (s *APIServer) serveStaticFiles(w http.ResponseWriter, r *http.Request) {
-	// 检查是否是API请求
-	if strings.HasPrefix(r.URL.Path, "/api/") {
-		s.writeErrorResponse(w, http.StatusNotFound, "API endpoint not found")
+	if err := json.NewDecoder(r.Body).Decode(&loginReq); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 	
-	// 提供前端静态文件
-	http.ServeFile(w, r, "web/index.html")
-}
-
-// corsMiddleware CORS中间件
-func (s *APIServer) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
+	// Simple authentication (in production, use proper authentication)
+	if loginReq.Username == "admin" && loginReq.Password == "admin" {
+		token, err := s.generateToken(loginReq.Username)
+		if err != nil {
+			http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 			return
 		}
 		
-		next(w, r)
-	}
-}
-
-// handleAuth 处理认证请求
-func (s *APIServer) handleAuth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	
-	if r.Method != http.MethodPost {
-		s.writeErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	
-	// 如果没有设置认证密钥，则直接允许访问
-	if s.config.APIAuthKey == "" {
-		response := APIResponse{
-			Success: true,
-			Message: "Authentication disabled",
-			Data: map[string]string{
-				"token": "no-auth-required",
-				"expires_in": "0",
-			},
-		}
-		json.NewEncoder(w).Encode(response)
-		return
-	}
-	
-	// 从请求中获取认证密钥
-	var authRequest struct {
-		AuthKey string `json:"auth_key"`
-	}
-	
-	if err := json.NewDecoder(r.Body).Decode(&authRequest); err != nil {
-		s.writeErrorResponse(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-	
-	// 验证认证密钥
-	if authRequest.AuthKey == s.config.APIAuthKey {
-		// 生成JWT令牌，有效期24小时
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"sub": "user",
-			"iat": time.Now().Unix(),
-			"exp": time.Now().Add(24 * time.Hour).Unix(),
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"token": token,
+			"expires_in": 3600,
 		})
-		
-		tokenString, err := token.SignedString([]byte(s.jwtSecret))
-		if err != nil {
-			s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to generate token")
-			return
-		}
-		
-		response := APIResponse{
-			Success: true,
-			Message: "Authentication successful",
-			Data: map[string]string{
-				"token": tokenString,
-				"expires_in": "86400",
-			},
-		}
-		json.NewEncoder(w).Encode(response)
 	} else {
-		s.writeErrorResponse(w, http.StatusUnauthorized, "Invalid authentication key")
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 	}
 }
 
-// authMiddleware 认证中间件
-func (s *APIServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// 如果没有设置认证密钥，则直接允许访问
-		if s.config.APIAuthKey == "" {
-			next(w, r)
-			return
-		}
-		
-		// 从请求头中获取认证信息
+// getKeysHandler handles key retrieval requests
+func (s *Server) getKeysHandler(w http.ResponseWriter, r *http.Request) {
+	// Mock data for now
+	keys := []map[string]interface{}{
+		{
+			"key": "AIza***1234",
+			"platform": "gemini",
+			"repository": "example/repo",
+			"file_path": "config.py",
+			"is_valid": true,
+			"discovered_at": time.Now().Format(time.RFC3339),
+		},
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"keys": keys,
+		"total": len(keys),
+	})
+}
+
+// getStatsHandler handles stats requests
+func (s *Server) getStatsHandler(w http.ResponseWriter, r *http.Request) {
+	// Mock data for now
+	stats := map[string]interface{}{
+		"total_keys": 100,
+		"valid_keys": 85,
+		"rate_limited_keys": 15,
+		"platforms": map[string]interface{}{
+			"gemini": map[string]interface{}{
+				"keys_found": 50,
+				"valid_keys": 45,
+			},
+			"openrouter": map[string]interface{}{
+				"keys_found": 30,
+				"valid_keys": 25,
+			},
+			"siliconflow": map[string]interface{}{
+				"keys_found": 20,
+				"valid_keys": 15,
+			},
+		},
+		"last_updated": time.Now().Format(time.RFC3339),
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// getMetricsHandler handles metrics requests
+func (s *Server) getMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	// Mock data for now
+	metrics := map[string]interface{}{
+		"throughput_keys_per_second": 10.5,
+		"cache_hit_rate": 0.85,
+		"detection_rate": 0.92,
+		"memory_usage_mb": 128.5,
+		"uptime_seconds": 3600,
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(metrics)
+}
+
+// authMiddleware handles JWT authentication
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			s.writeErrorResponse(w, http.StatusUnauthorized, "Authorization header required")
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
 			return
 		}
 		
-		// 检查认证格式
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			s.writeErrorResponse(w, http.StatusUnauthorized, "Invalid authorization format")
-			return
-		}
+		tokenString := authHeader[7:] // Remove "Bearer " prefix
 		
-		// 提取token
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		
-		// 验证token
-		if token == "no-auth-required" {
-			next(w, r)
-			return
-		}
-		
-		// 验证JWT令牌
-		parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return []byte(s.jwtSecret), nil
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return []byte(s.secret), nil
 		})
 		
-		if err != nil || !parsedToken.Valid {
-			s.writeErrorResponse(w, http.StatusUnauthorized, "Invalid or expired token")
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 		
-		next(w, r)
-	}
+		next.ServeHTTP(w, r)
+	})
 }
 
-// handleDebugFiles 处理调试文件信息
-func (s *APIServer) handleDebugFiles(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+// generateToken generates a JWT token
+func (s *Server) generateToken(username string) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": username,
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
 	
-	// 获取有效密钥文件
-	validFiles, err := s.fileManager.GetFilesByPrefix(s.config.ValidKeyPrefix)
-	if err != nil {
-		s.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get valid key files: %v", err))
-		return
-	}
-	
-	// 获取限流密钥文件
-	rateLimitedFiles, err := s.fileManager.GetFilesByPrefix(s.config.RateLimitedKeyPrefix)
-	if err != nil {
-		s.writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get rate limited key files: %v", err))
-		return
-	}
-	
-	// 手动更新缓存
-	s.updateCache()
-	
-	debugInfo := map[string]interface{}{
-		"data_path":                s.config.DataPath,
-		"valid_key_prefix":         s.config.ValidKeyPrefix,
-		"rate_limited_key_prefix":  s.config.RateLimitedKeyPrefix,
-		"valid_files":             validFiles,
-		"rate_limited_files":       rateLimitedFiles,
-		"valid_files_count":       len(validFiles),
-		"rate_limited_files_count": len(rateLimitedFiles),
-		"cached_valid_keys":       len(s.keysCache.ValidKeys),
-		"cached_rate_limited_keys": len(s.keysCache.RateLimitedKeys),
-		"cache_last_updated":      s.keysCache.LastUpdated.Format(time.RFC3339),
-	}
-	
-	response := APIResponse{
-		Success: true,
-		Message: "Debug information retrieved successfully",
-		Data:    debugInfo,
-	}
-	
-	json.NewEncoder(w).Encode(response)
-}
-
-// writeErrorResponse 写入错误响应
-func (s *APIServer) writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
-	w.WriteHeader(statusCode)
-	response := APIResponse{
-		Success: false,
-		Message: message,
-	}
-	json.NewEncoder(w).Encode(response)
+	return token.SignedString([]byte(s.secret))
 }
